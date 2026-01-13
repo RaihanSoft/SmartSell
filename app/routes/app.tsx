@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -23,7 +24,29 @@ export default function App() {
         <s-link href="/app/help">Help</s-link>
         <s-link href="/app/refer-earn">Refer & Earn</s-link>
       </s-app-nav>
-      <Outlet />
+      
+      {/* Persistent App Header - follows Polaris pattern */}
+      <div style={{ 
+        padding: "var(--p-space-400) var(--p-space-500)",
+        borderBottom: "1px solid var(--p-border-subdued)",
+        backgroundColor: "var(--p-surface)",
+      }}>
+      </div>
+
+      <Suspense
+        fallback={
+          <s-page>
+            <s-section>
+              <s-stack direction="block" gap="base" alignItems="center">
+                <s-spinner />
+                <s-text >Loading...</s-text>
+              </s-stack>
+            </s-section>
+          </s-page>
+        }
+      >
+        <Outlet />
+      </Suspense>
     </AppProvider>
   );
 }

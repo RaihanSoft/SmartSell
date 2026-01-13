@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Smooth transitions for Polaris web components to prevent flickering */
+s-page,
+s-section,
+s-heading,
+s-button {
+  transition: opacity 0.15s ease-in-out, transform 0.15s ease-in-out;
+}
+
+/* Prevent layout shift during navigation */
+s-page {
+  min-height: 100vh;
+}

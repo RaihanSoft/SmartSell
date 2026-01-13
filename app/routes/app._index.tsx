@@ -1,10 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher } from "react-router";
+import { useFetcher, useNavigate, useNavigation } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -86,11 +86,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
-
+  const navigation = useNavigation();
   const shopify = useAppBridge();
+  const navigate = useNavigate();
+  const [isNavigating, setIsNavigating] = useState(false);
+
   const isLoading =
     ["loading", "submitting"].includes(fetcher.state) &&
     fetcher.formMethod === "POST";
+
+  // Detect navigation state to prevent flickering (Polaris pattern: show loading during transitions)
+  const isNavigatingToCampaign =
+    navigation.state === "loading" &&
+    navigation.location?.pathname === "/app/create-campaign";
 
   useEffect(() => {
     if (fetcher.data?.product?.id) {
@@ -98,23 +106,64 @@ export default function Index() {
     }
   }, [fetcher.data?.product?.id, shopify]);
 
+  // Handle navigation with loading state (following Polaris patterns)
+  const goToCreateCampaign = () => {
+    // Prevent multiple clicks during navigation
+    if (isNavigatingToCampaign || isNavigating) return;
+    
+    setIsNavigating(true);
+    // Use requestAnimationFrame for smooth transition (Polaris best practice)
+    requestAnimationFrame(() => {
+      navigate("/app/create-campaign");
+    });
+  };
+
+  // Reset navigation state when navigation completes
+  useEffect(() => {
+    if (navigation.state === "idle") {
+      setIsNavigating(false);
+    }
+  }, [navigation.state]);
+
+
+
   const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
-    <s-page heading="Resell">
+    <s-page>
 
       {/* one  */}
       <s-stack direction="inline" paddingBlockEnd="base" alignItems="center" justifyContent="space-between">
         <s-heading>dashboard</s-heading>
-        <s-button variant="primary" >
+
+        <s-button
+          variant="primary"
+          onClick={goToCreateCampaign}
+          loading={isNavigatingToCampaign || isNavigating}
+          disabled={isNavigatingToCampaign || isNavigating}
+        >
           Create Campaign
         </s-button>
+
       </s-stack>
       {/* one  */}
 
       {/* two  */}
-      section
+      <s-section >
+        <s-stack direction="inline" justifyContent="space-between" >
+          <s-stack direction="inline" columnGap="base" >
+            <s-heading>Selleasy app embed is</s-heading>
+            <s-button variant="primary">Enabled</s-button>
+          </s-stack>
 
+          <s-stack direction="inline" columnGap="base" >
+            <s-button variant="primary">Refresh</s-button>
+            <s-button variant="primary">Disabled</s-button>
+          </s-stack>
+
+        </s-stack>
+
+      </s-section>
 
       {/* two  */}
 
