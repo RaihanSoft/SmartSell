@@ -103,12 +103,20 @@ export default function Index() {
   return (
     <s-page heading="Resell">
 
-      <div className="flex justify-between items-center pb-4 ">
+      {/* one  */}
+      <s-stack direction="inline" paddingBlockEnd="base" alignItems="center" justifyContent="space-between">
         <s-heading>dashboard</s-heading>
-        <s-button>
-          Generate a product
+        <s-button variant="primary" >
+          Create Campaign
         </s-button>
-      </div>
+      </s-stack>
+      {/* one  */}
+
+      {/* two  */}
+      section
+
+
+      {/* two  */}
 
       <s-section heading="Congrats on creating a new Shopify app 🎉">
         <s-paragraph>
