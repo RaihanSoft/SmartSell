@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useNavigate, useNavigation } from "react-router";
+import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -84,21 +84,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   };
 };
 
+type CampaignStep = "dashboard" | "campaign-types" | "campaign-form";
+type CampaignType = "list" | "amazon" | "classic" | null;
+
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
-  const navigation = useNavigation();
   const shopify = useAppBridge();
-  const navigate = useNavigate();
-  const [isNavigating, setIsNavigating] = useState(false);
+  const [currentStep, setCurrentStep] = useState<CampaignStep>("dashboard");
+  const [selectedCampaignType, setSelectedCampaignType] = useState<CampaignType>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const isLoading =
     ["loading", "submitting"].includes(fetcher.state) &&
     fetcher.formMethod === "POST";
-
-  // Detect navigation state to prevent flickering (Polaris pattern: show loading during transitions)
-  const isNavigatingToCampaign =
-    navigation.state === "loading" &&
-    navigation.location?.pathname === "/app/create-campaign";
 
   useEffect(() => {
     if (fetcher.data?.product?.id) {
@@ -106,210 +104,303 @@ export default function Index() {
     }
   }, [fetcher.data?.product?.id, shopify]);
 
-  // Handle navigation with loading state (following Polaris patterns)
-  const goToCreateCampaign = () => {
-    // Prevent multiple clicks during navigation
-    if (isNavigatingToCampaign || isNavigating) return;
-    
-    setIsNavigating(true);
-    // Use requestAnimationFrame for smooth transition (Polaris best practice)
-    requestAnimationFrame(() => {
-      navigate("/app/create-campaign");
-    });
+  // Same-page navigation: multi-step flow (follows .cursorrules for performance)
+  const goToCampaignTypes = () => {
+    setCurrentStep("campaign-types");
   };
 
-  // Reset navigation state when navigation completes
-  useEffect(() => {
-    if (navigation.state === "idle") {
-      setIsNavigating(false);
+  const goToCampaignForm = (type: CampaignType) => {
+    setSelectedCampaignType(type);
+    setCurrentStep("campaign-form");
+  };
+
+  const goBack = () => {
+    if (currentStep === "campaign-form") {
+      setCurrentStep("campaign-types");
+      setSelectedCampaignType(null);
+    } else if (currentStep === "campaign-types") {
+      setCurrentStep("dashboard");
     }
-  }, [navigation.state]);
+  };
 
+  const closeCampaignFlow = () => {
+    setCurrentStep("dashboard");
+    setSelectedCampaignType(null);
+  };
 
+  // Handle refresh action with loading state (follows .cursorrules)
+  const handleRefresh = async () => {
+    if (isRefreshing) return; // Prevent multiple clicks
+    
+    setIsRefreshing(true);
+    
+    // Simulate refresh operation (replace with actual API call if needed)
+    try {
+      // Add your refresh logic here (e.g., refetch data, update state)
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // Simulate API call
+      
+      // Show success toast (Polaris pattern)
+      shopify.toast.show("App embed refreshed successfully");
+    } catch (error) {
+      shopify.toast.show("Failed to refresh", { isError: true });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
     <s-page>
-
-      {/* one  */}
+      {/* Persistent Header Bar - Changes content based on step (follows .cursorrules) */}
       <s-stack direction="inline" paddingBlockEnd="base" alignItems="center" justifyContent="space-between">
-        <s-heading>dashboard</s-heading>
-
-        <s-button
-          variant="primary"
-          onClick={goToCreateCampaign}
-          loading={isNavigatingToCampaign || isNavigating}
-          disabled={isNavigatingToCampaign || isNavigating}
-        >
-          Create Campaign
-        </s-button>
-
-      </s-stack>
-      {/* one  */}
-
-      {/* two  */}
-      <s-section >
-        <s-stack direction="inline" justifyContent="space-between" >
-          <s-stack direction="inline" columnGap="base" >
-            <s-heading>Selleasy app embed is</s-heading>
-            <s-button variant="primary">Enabled</s-button>
-          </s-stack>
-
-          <s-stack direction="inline" columnGap="base" >
-            <s-button variant="primary">Refresh</s-button>
-            <s-button variant="primary">Disabled</s-button>
-          </s-stack>
-
-        </s-stack>
-
-      </s-section>
-
-      {/* two  */}
-
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-
-
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references.
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
+        {/* Left side: Title/Back navigation */}
+        {currentStep === "dashboard" && (
+          <s-heading>dashboard</s-heading>
+        )}
+        {currentStep === "campaign-types" && (
+          <s-stack direction="inline" gap="base" alignItems="center">
+            <s-button variant="tertiary" onClick={goBack}>
+              ←
             </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
+            <s-heading>Create campaign</s-heading>
+          </s-stack>
+        )}
+        {currentStep === "campaign-form" && (
+          <s-stack direction="inline" gap="base" alignItems="center">
+            <s-button variant="tertiary" onClick={goBack}>
+              ←
+            </s-button>
+            <s-heading>
+              Frequently bought together ({selectedCampaignType === "list" ? "List" : selectedCampaignType === "amazon" ? "Amazon" : "Classic"})
+            </s-heading>
+          </s-stack>
+        )}
 
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
+        {/* Right side: Action buttons */}
+        {currentStep === "dashboard" && (
+          <s-button
+            variant="primary"
+            onClick={goToCampaignTypes}
+          >
+            Create Campaign
+          </s-button>
+        )}
+        {currentStep === "campaign-form" && (
+          <s-button variant="tertiary">Test in store</s-button>
+        )}
+      </s-stack>
+
+      {/* Step 1: Campaign Type Selection - Same Page (follows .cursorrules) */}
+      {currentStep === "campaign-types" && (
+        <s-section>
+
+            <s-stack direction="block" gap="base">
+
+              {/* Filters */}
+              <s-stack direction="inline" gap="base">
+                <s-button variant="tertiary">Placement: All (18)</s-button>
+                <s-button variant="tertiary">More filters: All</s-button>
+              </s-stack>
+
+              {/* Campaign Type: Product page */}
+              <s-section>
+                <s-heading>Product page</s-heading>
+
+                <s-stack direction="inline" gap="base">
+                  {/* Frequently bought together (List) */}
+                  <s-box padding="base" borderWidth="base" borderRadius="base">
+                    <s-stack direction="block" gap="base">
+                      <s-heading>Frequently bought together (List)</s-heading>
+                      <s-paragraph>
+                        A pre-selected bundle in list format an alternative to single product purchase
+                      </s-paragraph>
+                      <s-stack direction="inline" gap="base">
+                        <s-button variant="tertiary">Preview</s-button>
+                        <s-button variant="primary" onClick={() => goToCampaignForm("list")}>
+                          Create
+                        </s-button>
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+
+                  {/* Frequently bought together (Amazon) */}
+                  <s-box padding="base" borderWidth="base" borderRadius="base">
+                    <s-stack direction="block" gap="base">
+                      <s-heading>Frequently bought together (Amazon)</s-heading>
+                      <s-paragraph>
+                        A pre-selected bundle in Amazon style an alternative to single product purchase
+                      </s-paragraph>
+                      <s-stack direction="inline" gap="base">
+                        <s-button variant="tertiary">Preview</s-button>
+                        <s-button variant="primary" onClick={() => goToCampaignForm("amazon")}>
+                          Create
+                        </s-button>
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+
+                  {/* Frequently bought together (Classic) */}
+                  <s-box padding="base" borderWidth="base" borderRadius="base">
+                    <s-stack direction="block" gap="base">
+                      <s-heading>Frequently bought together (Classic)</s-heading>
+                      <s-paragraph>
+                        A pre-selected bundle in classic style an alternative to single product purchase
+                      </s-paragraph>
+                      <s-stack direction="inline" gap="base">
+                        <s-button variant="tertiary">Preview</s-button>
+                        <s-button variant="primary" onClick={() => goToCampaignForm("classic")}>
+                          Create
+                        </s-button>
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+                </s-stack>
+              </s-section>
             </s-stack>
           </s-section>
-        )}
-      </s-section>
+      )}
 
-      {/* <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section> */}
+      {/* Step 2: Campaign Form - Same Page (follows .cursorrules) */}
+      {currentStep === "campaign-form" && (
+        <s-section>
+          {/* Campaign Form */}
+            <s-stack direction="block" gap="base">
+              {/* Campaign name */}
+              <s-section>
+                <s-heading>Campaign name - for internal reference</s-heading>
+                <s-text-field
+                  placeholder="Required. Eg: Frequently bought together campaign for t-shirts"
+                  label="Campaign name"
+                />
+              </s-section>
 
+              {/* Trigger */}
+              <s-section>
+                <s-heading>Trigger</s-heading>
+                <s-paragraph>
+                  Select the products for which the offer is displayed on the product page.
+                </s-paragraph>
+                <s-stack direction="block" gap="base">
+                  <s-select label="Type">
+                    <option>Specific products</option>
+                  </s-select>
+                  <s-text-field placeholder="Eg. T-shirt" label="Products" />
+                  <s-stack direction="inline" gap="base">
+                    <s-button variant="tertiary">Add condition</s-button>
+                    <s-link href="#">View guide</s-link>
+                  </s-stack>
+                </s-stack>
+              </s-section>
 
+              {/* Offers */}
+              <s-section>
+                <s-heading>Offers</s-heading>
+                <s-paragraph>
+                  The selected products will be offered as a bundle along with the trigger product.
+                </s-paragraph>
+                <s-stack direction="block" gap="base">
+                  <s-select label="Selection Method">
+                    <option>Manual selection</option>
+                    <option>Basic AI</option>
+                    <option>ChatGPT powered Selleasy AI (New)</option>
+                  </s-select>
+                  <s-select label="Type">
+                    <option>Specific products</option>
+                  </s-select>
+                  <s-text-field placeholder="Eg. Shorts + Sneakers" label="Products" />
+                </s-stack>
+              </s-section>
 
-      {/* <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section> */}
+              {/* Campaign settings */}
+              <s-section>
+                <s-heading>Campaign settings</s-heading>
+                <s-stack direction="block" gap="base">
+                  <s-checkbox label="Show quantity picker" />
+                  <s-checkbox label="Allow customers to de-select the trigger product" />
+                  <s-checkbox label="Do not preselect the items in the bundle" />
+                  <s-checkbox label="Randomize the order of offer products" />
+                  <s-checkbox label="Limit number of offered products shown" />
+                </s-stack>
+              </s-section>
+
+              {/* Discounts */}
+              <s-section>
+                <s-heading>Discounts</s-heading>
+                <s-select label="Discount">
+                  <option>No discount</option>
+                </s-select>
+              </s-section>
+
+              {/* Schedule campaign */}
+              <s-section>
+                <s-stack direction="inline" gap="base" alignItems="center">
+                  <s-heading>Schedule campaign</s-heading>
+                  <s-badge tone="success">Active</s-badge>
+                </s-stack>
+                <s-paragraph>
+                  Choose a start and end date to control when your campaign goes live.
+                </s-paragraph>
+                <s-stack direction="block" gap="base">
+                  <s-text-field label="Start date" defaultValue="2026-01-13" />
+                  <s-text-field label="Start time (EST)" defaultValue="23:57" />
+                  <s-checkbox label="Set end date" />
+                </s-stack>
+              </s-section>
+
+              {/* Other settings */}
+              <s-section>
+                <s-heading>Other settings</s-heading>
+                <s-stack direction="block" gap="base">
+                  <s-text-field placeholder="Optional. Eg: People also bought" label="Campaign title" />
+                  <s-text-field placeholder="Optional. Eg: Flaunt your style with this recommended outfit" label="Campaign sub-title" />
+                  <s-text-field placeholder="Optional. Eg: 10" label="Campaign priority" />
+                </s-stack>
+              </s-section>
+
+              {/* Save button */}
+              <s-stack direction="inline" gap="base" justifyContent="end">
+                <s-button variant="primary">Save</s-button>
+              </s-stack>
+            </s-stack>
+        </s-section>
+      )}
+
+      {/* Dashboard Content - Only show when on dashboard step */}
+      {currentStep === "dashboard" && (
+        <>
+          {/* two  */}
+          <s-section>
+            <s-stack direction="inline" justifyContent="space-between" alignItems="center">
+              <s-stack direction="inline" columnGap="base" alignItems="center">
+                <s-text>Selleasy app embed is</s-text>
+                <s-badge tone="caution">Disabled</s-badge>
+              </s-stack>
+
+              <s-stack direction="inline" columnGap="base">
+                <s-button 
+                  variant="tertiary" 
+                  onClick={handleRefresh}
+                  loading={isRefreshing}
+                  disabled={isRefreshing}
+                >
+                  {!isRefreshing && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--p-space-100)" }}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "inline-block", verticalAlign: "middle" }}>
+                        <path d="M13.5 8C13.5 11.0376 11.0376 13.5 8 13.5M2.5 8C2.5 4.96243 4.96243 2.5 8 2.5M8 2.5L6 4.5M8 2.5L10 4.5M8 13.5L6 11.5M8 13.5L10 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Refresh
+                    </span>
+                  )}
+                </s-button>
+                <s-button variant="primary">Enable</s-button>
+              </s-stack>
+            </s-stack>
+          </s-section>
+        </>
+      )}
+
+  
 
 
     </s-page>
