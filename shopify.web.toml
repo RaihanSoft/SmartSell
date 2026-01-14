@@ -3,5 +3,5 @@ roles = ["frontend", "backend"]
 webhooks_path = "/webhooks/app/uninstalled"
 
 [commands]
-predev = "npm run prisma -- generate"
+predev = "npx prisma generate || echo 'Warning: Prisma generate skipped (file may be locked by OneDrive). If Prisma client exists, dev server will still start.'"
 dev = "npm run prisma -- migrate deploy && npm exec react-router dev"
