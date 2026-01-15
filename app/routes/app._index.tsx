@@ -57,23 +57,25 @@ export default function Index() {
       <s-stack direction="inline" paddingBlockEnd="base" alignItems="center" justifyContent="space-between">
         {/* Left side: Title/Back navigation */}
         {currentStep === "dashboard" && (
-          <s-heading>dashboard</s-heading>
+          <s-heading> <span style={{ fontSize: "20px" }} >Dashboard</span> </s-heading>
         )}
         {currentStep === "campaign-types" && (
-          <s-stack direction="inline" gap="base" alignItems="center">
+          <s-stack direction="inline" gap="none" alignItems="center">
             <s-button variant="tertiary" onClick={goBack}>
               ←
             </s-button>
-            <s-heading>Create campaign</s-heading>
+
+            <s-heading> <span style={{ fontSize: "20px" }} >Create campaign</span> </s-heading>
           </s-stack>
         )}
         {currentStep === "campaign-form" && (
-          <s-stack direction="inline" gap="base" alignItems="center">
+          <s-stack direction="inline" gap="none" alignItems="center">
             <s-button variant="tertiary" onClick={goBack}>
               ←
             </s-button>
             <s-heading>
-              Frequently bought together ({selectedCampaignType === "list" ? "List" : selectedCampaignType === "amazon" ? "Amazon" : "Classic"})
+              <span style={{ fontSize: "20px" }} >Frequently bought together</span>
+              ({selectedCampaignType === "list" ? "List" : selectedCampaignType === "amazon" ? "Amazon" : "Classic"})
             </s-heading>
           </s-stack>
         )}
@@ -140,7 +142,7 @@ export default function Index() {
 
             {/* Frequently bought together (Amazon) */}
             <s-grid-item>
-              <s-box  borderRadius="base">
+              <s-box borderRadius="base">
                 < s-section>
                   <s-stack direction="block" gap="base">
                     <s-image
@@ -166,7 +168,7 @@ export default function Index() {
 
             {/* Frequently bought together (Classic) */}
             <s-grid-item>
-              <s-box  borderRadius="base">
+              <s-box borderRadius="base">
                 <s-section>
                   <s-stack direction="block" gap="base">
                     <s-image
@@ -205,7 +207,7 @@ export default function Index() {
 
       {/* Step 2: Campaign Form - Same Page (follows .cursorrules) */}
       {currentStep === "campaign-form" && (
-        <s-section>
+        <s-stack>
           {/* Campaign Form */}
           <s-stack direction="block" gap="base">
             {/* Campaign name */}
@@ -216,6 +218,7 @@ export default function Index() {
                 label="Campaign name"
               />
             </s-section>
+
 
             {/* Trigger */}
             <s-section>
@@ -304,16 +307,20 @@ export default function Index() {
             <s-stack direction="inline" gap="base" justifyContent="end">
               <s-button variant="primary">Save</s-button>
             </s-stack>
+
           </s-stack>
-        </s-section>
+        </s-stack>
+
       )}
+
+
 
       {/* Dashboard Content - Only show when on dashboard step */}
       {currentStep === "dashboard" && (
         <s-section>
           <s-stack direction="inline" justifyContent="space-between" alignItems="center">
             <s-stack direction="inline" columnGap="base" alignItems="center">
-              <s-text>Selleasy app embed is</s-text>
+              <s-heading>Selleasy app embed is</s-heading>
               <s-badge tone="caution">Disabled</s-badge>
             </s-stack>
 

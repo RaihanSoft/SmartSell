@@ -26,12 +26,12 @@ export default function App() {
       </s-app-nav>
       
       {/* Persistent App Header - follows Polaris pattern */}
-      <div style={{ 
+      {/* <div style={{ 
         padding: "var(--p-space-400) var(--p-space-500)",
         borderBottom: "1px solid var(--p-border-subdued)",
         backgroundColor: "var(--p-surface)",
       }}>
-      </div>
+      </div> */}
 
       <Suspense
         fallback={
