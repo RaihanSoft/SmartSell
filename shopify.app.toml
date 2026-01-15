@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "c08b448c95bb8a19b34dd602e7727452"
-name = "Resell pro"
+name = "SmartSell"
 application_url = "https://example.com"
 embedded = true
 
