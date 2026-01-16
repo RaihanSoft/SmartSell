@@ -24,6 +24,7 @@ export default function App() {
         <s-link href="/app/help">Help</s-link>
         <s-link href="/app/refer-earn">Refer & Earn</s-link>
         <s-link href="/app/test-session">Test Session Token</s-link>
+        <s-link href="/app/exten">Test Extension</s-link>
       </s-app-nav>
       
       {/* Persistent App Header - follows Polaris pattern */}

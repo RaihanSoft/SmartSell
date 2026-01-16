@@ -432,7 +432,7 @@ export default function Index() {
                   name="setEndDate"
                   label="Set end date" 
                   checked={setEndDate}
-                  onChange={(e) => setSetEndDate(e.currentTarget.checked)}
+                  onChange={(e) => setSetEndDate(Boolean(e.currentTarget.checked))}
                 />
                 {setEndDate && (
                   <s-stack direction="inline" gap="base" alignItems="end">

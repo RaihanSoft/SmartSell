@@ -1,0 +1,26 @@
+# Learn more about configuring your checkout UI extension:
+# https://shopify.dev/docs/api/checkout-ui-extensions/latest/configuration
+
+# The version of APIs your extension will receive. Learn more:
+# https://shopify.dev/docs/api/usage/versioning
+api_version = "2025-10"
+
+[[extensions]]
+name = "Thank You Page - Cross Sell"
+handle = "thank-you-page"
+type = "ui_extension"
+uid = "thank-you-cross-sell-2025"
+
+# Controls where in Shopify your extension will be injected,
+# and the file that contains your extension's source code.
+# This target makes it available as an app block on the Thank You page
+[[extensions.targeting]]
+module = "./src/index.jsx"
+target = "purchase.thank-you.block.render"
+
+[extensions.capabilities]
+# Gives your extension access to directly query Shopify's storefront API.
+api_access = true
+
+# Gives your extension access to make external network calls
+network_access = true
