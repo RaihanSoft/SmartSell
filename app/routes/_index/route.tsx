@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect, Form, useLoaderData } from "react-router";
 
 import { login } from "../../shopify.server";
-import type { AuthQueryDto } from "../types/auth.types";
+import type { AuthQueryDto } from "../../types/auth.types";
 
 import styles from "./styles.module.css";
 
