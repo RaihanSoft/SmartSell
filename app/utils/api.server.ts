@@ -100,88 +100,6 @@ export async function forwardToBackend(
 }
 
 /**
- * Forward GET request to backend
- */
-export async function forwardGet<T = unknown>(
-  request: Request,
-  endpoint: string
-): Promise<T> {
-  const response = await forwardToBackend(request, endpoint, {
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend request failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Forward POST request to backend
- */
-export async function forwardPost<T = unknown>(
-  request: Request,
-  endpoint: string,
-  data?: unknown
-): Promise<T> {
-  const response = await forwardToBackend(request, endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend request failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Forward PUT request to backend
- */
-export async function forwardPut<T = unknown>(
-  request: Request,
-  endpoint: string,
-  data?: unknown
-): Promise<T> {
-  const response = await forwardToBackend(request, endpoint, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend request failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
- * Forward DELETE request to backend
- */
-export async function forwardDelete<T = unknown>(
-  request: Request,
-  endpoint: string
-): Promise<T> {
-  const response = await forwardToBackend(request, endpoint, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Backend request failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-/**
  * Exchange App Bridge session token for expiring offline access token
  * Uses Shopify OAuth token exchange endpoint
  * Returns an expiring offline access token with refresh token (90-day refresh token lifetime)
@@ -278,3 +196,4 @@ export function getShopFromRequest(request: Request): string | null {
 
   return null;
 }
+
