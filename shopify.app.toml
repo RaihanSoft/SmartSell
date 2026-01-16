@@ -2,7 +2,7 @@
 
 client_id = "c08b448c95bb8a19b34dd602e7727452"
 name = "SmartSell"
-application_url = "https://example.com"
+application_url = "https://agaricaceous-breana-floggingly.ngrok-free.dev"
 embedded = true
 
 [build]
@@ -24,4 +24,4 @@ api_version = "2025-10"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://agaricaceous-breana-floggingly.ngrok-free.dev/auth" ]

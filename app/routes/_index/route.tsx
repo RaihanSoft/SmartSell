@@ -2,13 +2,22 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect, Form, useLoaderData } from "react-router";
 
 import { login } from "../../shopify.server";
+import type { AuthQueryDto } from "../types/auth.types";
 
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
 
-  if (url.searchParams.get("shop")) {
+  // Extract query parameters matching AuthQueryDto interface
+  const authParams: AuthQueryDto = {
+    shop: url.searchParams.get("shop") || undefined,
+    embedded: url.searchParams.get("embedded") || undefined,
+    host: url.searchParams.get("host") || undefined,
+  };
+
+  // Redirect to app if shop parameter is present
+  if (authParams.shop) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
