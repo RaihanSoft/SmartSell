@@ -6,6 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 type CampaignStep = "dashboard" | "campaign-types" | "campaign-form";
 type CampaignType = "list" | "amazon" | "classic" | null;
 
+// Backend base URL: prefer env var, fall back to provided ngrok URL for local dev.
+const BACKEND_BASE_URL =
+  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_BACKEND_BASE_URL) ||
+  "https://agaricaceous-breana-floggingly.ngrok-free.dev";
+
 export default function Index() {
   const shopify = useAppBridge();
   const [currentStep, setCurrentStep] = useState<CampaignStep>("dashboard");
@@ -20,6 +25,8 @@ export default function Index() {
     postPurchaseConfigured: boolean;
   } | null>(null);
   const [triggerType, setTriggerType] = useState<string>("");
+  const [campaignName, setCampaignName] = useState<string>("");
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Reset modal state when triggerType changes
   useEffect(() => {
@@ -36,6 +43,16 @@ export default function Index() {
   const [isTriggerModalOpen, setIsTriggerModalOpen] = useState<boolean>(false);
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
 
+  // Offers (Configurations) modal state
+  const [offerType, setOfferType] = useState<"products" | "variants">("products");
+  const [offerModalSearch, setOfferModalSearch] = useState<string>("");
+  const [offerModalSelected, setOfferModalSelected] = useState<Record<string, boolean>>({});
+  const [offerModalData, setOfferModalData] = useState<any[]>([]);
+  const [offerModalLoading, setOfferModalLoading] = useState<boolean>(false);
+  const [offerModalError, setOfferModalError] = useState<string | null>(null);
+  const [isOfferModalOpen, setIsOfferModalOpen] = useState<boolean>(false);
+  const [selectedOfferItems, setSelectedOfferItems] = useState<any[]>([]);
+
   const openTriggerModal = () => {
     const modal = document.getElementById("trigger-modal") as any;
     if (!modal) return;
@@ -43,6 +60,23 @@ export default function Index() {
     setIsTriggerModalOpen(true);
 
     // Prefer web-component APIs if present; otherwise fall back to attributes.
+    if (typeof modal.show === "function") {
+      modal.show();
+      return;
+    }
+    if ("open" in modal) {
+      modal.open = true;
+      return;
+    }
+    modal.setAttribute("open", "");
+  };
+
+  const openOfferModal = () => {
+    const modal = document.getElementById("offer-modal") as any;
+    if (!modal) return;
+
+    setIsOfferModalOpen(true);
+
     if (typeof modal.show === "function") {
       modal.show();
       return;
@@ -108,6 +142,51 @@ export default function Index() {
     return () => clearTimeout(timeoutId);
   }, [isTriggerModalOpen, triggerType, triggerModalSearch]);
 
+  // Fetch data for offers modal based on offerType
+  useEffect(() => {
+    if (!isOfferModalOpen) return;
+
+    const fetchData = async () => {
+      setOfferModalLoading(true);
+      setOfferModalError(null);
+
+      try {
+        const searchParam = offerModalSearch.trim()
+          ? `?query=${encodeURIComponent(offerModalSearch.trim())}`
+          : "";
+
+        let apiUrl = "";
+        if (offerType === "products") {
+          apiUrl = `/api/products-search${searchParam}`;
+        } else if (offerType === "variants") {
+          apiUrl = `/api/variants${searchParam}`;
+        }
+
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.message || "Failed to fetch offers data");
+        }
+
+        if (offerType === "products") {
+          setOfferModalData(data.products || []);
+        } else if (offerType === "variants") {
+          setOfferModalData(data.variants || []);
+        }
+      } catch (error) {
+        console.error("Error fetching offers modal data:", error);
+        setOfferModalError(error instanceof Error ? error.message : "Failed to fetch data");
+        setOfferModalData([]);
+      } finally {
+        setOfferModalLoading(false);
+      }
+    };
+
+    const timeoutId = setTimeout(fetchData, 300);
+    return () => clearTimeout(timeoutId);
+  }, [isOfferModalOpen, offerType, offerModalSearch]);
+
   // Same-page navigation: multi-step flow (follows .cursorrules for performance)
   const goToCampaignTypes = () => {
     setCurrentStep("campaign-types");
@@ -127,8 +206,61 @@ export default function Index() {
     }
   };
 
-  // Handle save campaign - show validation modal
-  const handleSaveCampaign = () => {
+  // Send core campaign data to backend ingest endpoint
+  const sendCampaignToBackend = async () => {
+    if (!campaignName.trim()) {
+      shopify.toast?.show?.("Please enter a campaign name before saving.", {
+        isError: true,
+      });
+      return;
+    }
+
+    if (!BACKEND_BASE_URL) {
+      shopify.toast?.show?.("Backend URL is not configured.", { isError: true });
+      return;
+    }
+
+    const payload = {
+      campaignName: campaignName.trim(),
+      trigger: {
+        type: triggerType || "all-products",
+        items: selectedItems,
+      },
+      offers: {
+        selectionMethod,
+        items: selectedOfferItems,
+      },
+    };
+
+    try {
+      setIsSaving(true);
+      const response = await fetch(`${BACKEND_BASE_URL}/api/ingest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Backend responded with ${response.status}`);
+      }
+
+      shopify.toast?.show?.("Campaign data sent to backend successfully.");
+    } catch (error) {
+      console.error("Error sending campaign to backend:", error);
+      shopify.toast?.show?.("Failed to send campaign data to backend.", {
+        isError: true,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle save campaign - send to backend and show validation modal
+  const handleSaveCampaign = async () => {
+    await sendCampaignToBackend();
+
     setIsValidating(true);
     setValidationResults(null);
 
@@ -345,8 +477,10 @@ export default function Index() {
                 <s-heading>Campaign name - for internal reference</s-heading>
                 <s-text-field
                   name="campaignName"
+                  value={campaignName}
                   placeholder="Required. Eg: Frequently bought together campaign for t-shirts"
                   required
+                  onInput={(e) => setCampaignName(e.currentTarget.value || "")}
                 />
               </s-section>
 
@@ -372,7 +506,7 @@ export default function Index() {
                         <s-option value="specific-products">Specific Products</s-option>
                         <s-option value="tags">Tags</s-option>
                         <s-option value="collections">Collections</s-option>
-                  
+
                       </s-select>
                     </s-box>
 
@@ -380,18 +514,18 @@ export default function Index() {
                       <s-text-field
                         name="collection"
                         label={
-                          triggerType === "specific-products" 
-                            ? "Products" 
-                            : triggerType === "tags" 
-                            ? "Tags" 
-                            : "Collection"
+                          triggerType === "specific-products"
+                            ? "Products"
+                            : triggerType === "tags"
+                              ? "Tags"
+                              : "Collection"
                         }
                         placeholder={
-                          triggerType === "specific-products" 
-                            ? "Enter products" 
-                            : triggerType === "tags" 
-                            ? "Enter tags" 
-                            : "Enter collection"
+                          triggerType === "specific-products"
+                            ? "Enter products"
+                            : triggerType === "tags"
+                              ? "Enter tags"
+                              : "Enter collection"
                         }
                         disabled={triggerType === "all-products"}
                         onFocus={() => {
@@ -456,7 +590,7 @@ export default function Index() {
                                   if (shopDomain && item.id) {
                                     const idParts = item.id.split("/");
                                     const resourceId = idParts[idParts.length - 1];
-                                    
+
                                     if (triggerType === "specific-products") {
                                       window.open(`https://${shopDomain}/admin/products/${resourceId}`, "_blank");
                                     } else if (triggerType === "collections") {
@@ -466,8 +600,8 @@ export default function Index() {
                                 }}
                               >
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M8 3C5.5 3 3.5 5 3.5 8C3.5 11 5.5 13 8 13C10.5 13 12.5 11 12.5 8C12.5 5 10.5 3 8 3ZM8 11.5C6.6 11.5 5.5 10.4 5.5 9C5.5 7.6 6.6 6.5 8 6.5C9.4 6.5 10.5 7.6 10.5 9C10.5 10.4 9.4 11.5 8 11.5Z" fill="currentColor"/>
-                                  <path d="M8 7.5C7.4 7.5 7 7.9 7 8.5C7 9.1 7.4 9.5 8 9.5C8.6 9.5 9 9.1 9 8.5C9 7.9 8.6 7.5 8 7.5Z" fill="currentColor"/>
+                                  <path d="M8 3C5.5 3 3.5 5 3.5 8C3.5 11 5.5 13 8 13C10.5 13 12.5 11 12.5 8C12.5 5 10.5 3 8 3ZM8 11.5C6.6 11.5 5.5 10.4 5.5 9C5.5 7.6 6.6 6.5 8 6.5C9.4 6.5 10.5 7.6 10.5 9C10.5 10.4 9.4 11.5 8 11.5Z" fill="currentColor" />
+                                  <path d="M8 7.5C7.4 7.5 7 7.9 7 8.5C7 9.1 7.4 9.5 8 9.5C8.6 9.5 9 9.1 9 8.5C9 7.9 8.6 7.5 8 7.5Z" fill="currentColor" />
                                 </svg>
                               </s-button>
                             )}
@@ -487,7 +621,7 @@ export default function Index() {
                               }}
                             >
                               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                               </svg>
                             </s-button>
                           </s-stack>
@@ -503,14 +637,14 @@ export default function Index() {
                 </s-stack>
 
                 {/* Trigger browse/search modal */}
-                <s-modal 
-                  id="trigger-modal" 
+                <s-modal
+                  id="trigger-modal"
                   heading={
-                    triggerType === "specific-products" 
-                      ? "Add products" 
-                      : triggerType === "tags" 
-                      ? "Add tags" 
-                      : "Add collections"
+                    triggerType === "specific-products"
+                      ? "Add products"
+                      : triggerType === "tags"
+                        ? "Add tags"
+                        : "Add collections"
                   }
                 >
                   <s-stack direction="block" gap="base">
@@ -549,7 +683,7 @@ export default function Index() {
                               const itemTitle = item.title || item.name || "";
                               const itemImage = item.image || null;
                               const itemImageAlt = item.imageAlt || itemTitle;
-                              
+
                               // Get count text based on type
                               let countText = "";
                               if (triggerType === "collections") {
@@ -595,15 +729,15 @@ export default function Index() {
                     <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
                       <s-text>
                         {Object.values(triggerModalSelected).filter(Boolean).length}/50{" "}
-                        {triggerType === "specific-products" 
-                          ? "products" 
-                          : triggerType === "tags" 
-                          ? "tags" 
-                          : "collections"}{" "}
+                        {triggerType === "specific-products"
+                          ? "products"
+                          : triggerType === "tags"
+                            ? "tags"
+                            : "collections"}{" "}
                         selected
                       </s-text>
                       <s-stack direction="inline" gap="base">
-                        <s-button 
+                        <s-button
                           variant="secondary"
                           onClick={() => {
                             setIsTriggerModalOpen(false);
@@ -644,14 +778,14 @@ export default function Index() {
                                 (item) => !existingIds.has(item.id)
                               );
                               const updated = [...prev, ...newItems];
-                              
+
                               // Update the text field with selected items
                               const allSelectedTitles = updated.map((item) => item.title).join(", ");
                               const textField = document.querySelector('input[name="collection"]') as HTMLInputElement;
                               if (textField) {
                                 textField.value = allSelectedTitles;
                               }
-                              
+
                               return updated;
                             });
 
@@ -678,7 +812,7 @@ export default function Index() {
                 </s-modal>
 
               </s-section>
-{/* offer ......................................................................... */}
+              {/* offer ......................................................................... */}
               {/* Offers */}
               <s-section>
                 <s-heading>Offers</s-heading>
@@ -740,27 +874,304 @@ export default function Index() {
                     <s-box inlineSize="410px">
                       <s-select
                         name="offerType"
-                        placeholder="Specific products"
+                      placeholder="Specific products"
                         label="Type"
+                      value={offerType}
+                      onChange={(e) => {
+                        const value = e.currentTarget.value === "Variants" ? "variants" : "products";
+                        setOfferType(value);
+                        setOfferModalSelected({});
+                        setOfferModalData([]);
+                        setSelectedOfferItems([]);
+                      }}
                       >
                         <s-option disabled value="Tigger">Tigger Type</s-option>
-                        <s-option value="Products">Specific Products</s-option>
-                        <s-option value="Variants">Specific Variants</s-option>
+                      <s-option value="Products">Specific Products</s-option>
+                      <s-option value="Variants">Specific Variants</s-option>
                       </s-select>
                     </s-box>
 
                     <s-box inlineSize="422px">
                       <s-text-field
                         name="products"
-                        label="Products"
-                        placeholder="Shorts + Shoes"
+                        label={offerType === "variants" ? "Variants" : "Products"}
+                        placeholder={offerType === "variants" ? "Select variants" : "Shorts + Shoes"}
+                        onFocus={() => openOfferModal()}
+                        onInput={(e) => {
+                          setOfferModalSearch(e.currentTarget.value || "");
+                          openOfferModal();
+                        }}
                       />
                     </s-box>
 
-                    <s-button variant="secondary">Browse</s-button>
+                    <s-button
+                      variant="secondary"
+                      commandFor="offer-modal"
+                      onClick={() => openOfferModal()}
+                    >
+                      Browse
+                    </s-button>
                   </s-stack>
+                  
+                  {/* Selected offers list */}
+                  {selectedOfferItems.length > 0 && (
+                    <s-stack direction="block" gap="small" paddingBlockStart="base">
+                      {selectedOfferItems.map((item: any) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--p-space-400)",
+                            padding: "var(--p-space-300)",
+                            backgroundColor: "var(--p-color-bg-surface-secondary)",
+                            borderRadius: "var(--p-border-radius-base)",
+                          }}
+                        >
+                          {item.image && (
+                            <div
+                              style={{
+                                width: "48px",
+                                height: "48px",
+                                borderRadius: "var(--p-border-radius-base)",
+                                overflow: "hidden",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <img
+                                src={item.image}
+                                alt={item.imageAlt || item.title}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            </div>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <s-text>{item.title}</s-text>
+                            {item.productTitle && offerType === "variants" && (
+                              <s-text>{item.productTitle}</s-text>
+                            )}
+                          </div>
+                          <s-stack direction="inline" gap="small" alignItems="center">
+                            {/* Remove button */}
+                            <s-button
+                              variant="tertiary"
+                              onClick={() => {
+                                setSelectedOfferItems((prev) => {
+                                  const updated = prev.filter((i) => i.id !== item.id);
+                                  const remainingTitles = updated.map((i) => i.title).join(", ");
+                                  const textField = document.querySelector(
+                                    'input[name="products"]',
+                                  ) as HTMLInputElement;
+                                  if (textField) {
+                                    textField.value = remainingTitles;
+                                  }
+                                  return updated;
+                                });
+                              }}
+                            >
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  d="M12 4L4 12M4 4L12 12"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </s-button>
+                          </s-stack>
+                        </div>
+                      ))}
+                    </s-stack>
+                  )}
                 </s-stack>
               </s-section>
+
+              {/* Offers modal for configurations */}
+              <s-modal
+                id="offer-modal"
+                heading={offerType === "variants" ? "Add variants" : "Add products"}
+              >
+                <s-stack direction="block" gap="base">
+                  <s-text-field
+                    name="offerModalSearch"
+                    label=""
+                    placeholder="Search"
+                    value={offerModalSearch}
+                    onInput={(e) => setOfferModalSearch(e.currentTarget.value || "")}
+                  />
+
+                  {/* Loading state */}
+                  {offerModalLoading && (
+                    <s-stack
+                      direction="block"
+                      gap="base"
+                      alignItems="center"
+                      paddingBlock="large"
+                    >
+                      <s-spinner size="large" />
+                      <s-text>Loading...</s-text>
+                    </s-stack>
+                  )}
+
+                  {/* Error state */}
+                  {!offerModalLoading && offerModalError && (
+                    <s-stack direction="block" gap="base" paddingBlock="base">
+                      <s-text tone="critical">{offerModalError}</s-text>
+                    </s-stack>
+                  )}
+
+                  {/* Data list */}
+                  {!offerModalLoading && !offerModalError && (
+                    <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+                      <s-stack direction="block" gap="small">
+                        {offerModalData.length === 0 ? (
+                          <s-text>No results found</s-text>
+                        ) : (
+                          offerModalData.map((item: any) => {
+                            const itemId = item.id;
+                            const itemTitle = item.title || "";
+                            const itemImage = item.image || null;
+                            const itemImageAlt = item.imageAlt || itemTitle;
+
+                            return (
+                              <s-stack
+                                key={itemId}
+                                direction="inline"
+                                gap="base"
+                                alignItems="center"
+                              >
+                                {itemImage && (
+                                  <div
+                                    style={{
+                                      width: "40px",
+                                      height: "40px",
+                                      borderRadius: "var(--p-border-radius-base)",
+                                      overflow: "hidden",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <img
+                                      src={itemImage}
+                                      alt={itemImageAlt}
+                                      style={{
+                                        width: "100%",
+                                        height: "100%",
+                                        objectFit: "cover",
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                                <s-checkbox
+                                  name={itemId}
+                                  label={
+                                    offerType === "variants" && item.productTitle
+                                      ? `${itemTitle} — ${item.productTitle}`
+                                      : itemTitle
+                                  }
+                                  checked={Boolean(offerModalSelected[itemId])}
+                                  onChange={() => {
+                                    setOfferModalSelected((prev) => ({
+                                      ...prev,
+                                      [itemId]: !prev[itemId],
+                                    }));
+                                  }}
+                                />
+                              </s-stack>
+                            );
+                          })
+                        )}
+                      </s-stack>
+                    </div>
+                  )}
+
+                  {/* Footer actions */}
+                  <s-stack
+                    direction="inline"
+                    gap="base"
+                    alignItems="center"
+                    justifyContent="space-between"
+                  >
+                    <s-text>
+                      {Object.values(offerModalSelected).filter(Boolean).length}/50{" "}
+                      {offerType === "variants" ? "variants" : "products"} selected
+                    </s-text>
+                    <s-stack direction="inline" gap="base">
+                      <s-button
+                        variant="secondary"
+                        onClick={() => {
+                          setIsOfferModalOpen(false);
+                          setOfferModalSelected({});
+                          const modal = document.getElementById("offer-modal") as any;
+                          if (modal && typeof modal.hide === "function") {
+                            modal.hide();
+                          } else if (modal && "open" in modal) {
+                            modal.open = false;
+                          } else if (modal) {
+                            modal.removeAttribute("open");
+                          }
+                        }}
+                      >
+                        Cancel
+                      </s-button>
+                      <s-button
+                        variant="primary"
+                        disabled={
+                          Object.values(offerModalSelected).filter(Boolean).length === 0
+                        }
+                        onClick={() => {
+                          const newlySelected = offerModalData
+                            .filter((item: any) => offerModalSelected[item.id])
+                            .map((item: any) => ({
+                              id: item.id,
+                              title: item.title || "",
+                              image: item.image || null,
+                              imageAlt: item.imageAlt || item.title || "",
+                              productTitle: item.productTitle || "",
+                            }));
+
+                          setSelectedOfferItems((prev) => {
+                            const existingIds = new Set(prev.map((i) => i.id));
+                            const merged = [
+                              ...prev,
+                              ...newlySelected.filter((i) => !existingIds.has(i.id)),
+                            ];
+                            const titles = merged.map((i) => i.title).join(", ");
+                            const textField = document.querySelector(
+                              'input[name="products"]',
+                            ) as HTMLInputElement;
+                            if (textField) {
+                              textField.value = titles;
+                            }
+                            return merged;
+                          });
+
+                          setOfferModalSelected({});
+                          setIsOfferModalOpen(false);
+                          const modal = document.getElementById("offer-modal") as any;
+                          if (modal && typeof modal.hide === "function") {
+                            modal.hide();
+                          } else if (modal && "open" in modal) {
+                            modal.open = false;
+                          } else if (modal) {
+                            modal.removeAttribute("open");
+                          }
+                        }}
+                      >
+                        Add
+                      </s-button>
+                    </s-stack>
+                  </s-stack>
+                </s-stack>
+              </s-modal>
+
+              {/* offer  end......................................................................... */}
 
               {/* Campaign settings */}
               <s-section>
@@ -881,6 +1292,8 @@ export default function Index() {
 
                 <s-button
                   variant="primary"
+                  loading={isSaving}
+                  disabled={isSaving}
                   type="button"
                   onClick={handleSaveCampaign}
                   commandFor="modal"
