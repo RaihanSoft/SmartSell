@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { HeadersFunction } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -19,6 +19,94 @@ export default function Index() {
     productsValid: boolean;
     postPurchaseConfigured: boolean;
   } | null>(null);
+  const [triggerType, setTriggerType] = useState<string>("");
+
+  // Reset modal state when triggerType changes
+  useEffect(() => {
+    setTriggerModalSelected({});
+    setTriggerModalData([]);
+    setTriggerModalSearch("");
+    setSelectedItems([]);
+  }, [triggerType]);
+  const [triggerModalSearch, setTriggerModalSearch] = useState<string>("");
+  const [triggerModalSelected, setTriggerModalSelected] = useState<Record<string, boolean>>({});
+  const [triggerModalData, setTriggerModalData] = useState<any[]>([]);
+  const [triggerModalLoading, setTriggerModalLoading] = useState<boolean>(false);
+  const [triggerModalError, setTriggerModalError] = useState<string | null>(null);
+  const [isTriggerModalOpen, setIsTriggerModalOpen] = useState<boolean>(false);
+  const [selectedItems, setSelectedItems] = useState<any[]>([]);
+
+  const openTriggerModal = () => {
+    const modal = document.getElementById("trigger-modal") as any;
+    if (!modal) return;
+
+    setIsTriggerModalOpen(true);
+
+    // Prefer web-component APIs if present; otherwise fall back to attributes.
+    if (typeof modal.show === "function") {
+      modal.show();
+      return;
+    }
+    if ("open" in modal) {
+      modal.open = true;
+      return;
+    }
+    modal.setAttribute("open", "");
+  };
+
+  // Fetch data based on triggerType when modal opens or search changes
+  useEffect(() => {
+    if (!isTriggerModalOpen || !triggerType || triggerType === "all-products") {
+      return;
+    }
+
+    const fetchData = async () => {
+      setTriggerModalLoading(true);
+      setTriggerModalError(null);
+
+      try {
+        let apiUrl = "";
+        const searchParam = triggerModalSearch.trim() ? `&query=${encodeURIComponent(triggerModalSearch.trim())}` : "";
+
+        if (triggerType === "specific-products") {
+          apiUrl = `/api/products-search${searchParam}`;
+        } else if (triggerType === "tags") {
+          apiUrl = `/api/tags${searchParam}`;
+        } else if (triggerType === "collections") {
+          apiUrl = `/api/collections${searchParam}`;
+        } else {
+          setTriggerModalLoading(false);
+          return;
+        }
+
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.message || "Failed to fetch data");
+        }
+
+        // Transform data to common format
+        if (triggerType === "specific-products") {
+          setTriggerModalData(data.products || []);
+        } else if (triggerType === "tags") {
+          setTriggerModalData(data.tags || []);
+        } else if (triggerType === "collections") {
+          setTriggerModalData(data.collections || []);
+        }
+      } catch (error) {
+        console.error("Error fetching modal data:", error);
+        setTriggerModalError(error instanceof Error ? error.message : "Failed to fetch data");
+        setTriggerModalData([]);
+      } finally {
+        setTriggerModalLoading(false);
+      }
+    };
+
+    // Debounce search
+    const timeoutId = setTimeout(fetchData, 300);
+    return () => clearTimeout(timeoutId);
+  }, [isTriggerModalOpen, triggerType, triggerModalSearch]);
 
   // Same-page navigation: multi-step flow (follows .cursorrules for performance)
   const goToCampaignTypes = () => {
@@ -52,7 +140,7 @@ export default function Index() {
         productsValid: true, // Products are valid
         postPurchaseConfigured: false, // Post-purchase not configured
       };
-      
+
       setIsValidating(false);
       setValidationResults(results);
     }, 2000); // 2 second delay to show loading state
@@ -277,23 +365,136 @@ export default function Index() {
                         name="triggerType"
                         placeholder="Select type"
                         label="Type"
+                        value={triggerType}
+                        onChange={(e) => setTriggerType(e.currentTarget.value || "")}
                       >
-                        <s-option value="collections">Collections</s-option>
-                        <s-option value="products">Products</s-option>
+                        <s-option value="all-products">All Products</s-option>
+                        <s-option value="specific-products">Specific Products</s-option>
                         <s-option value="tags">Tags</s-option>
+                        <s-option value="collections">Collections</s-option>
+                  
                       </s-select>
                     </s-box>
 
                     <s-box inlineSize="422px">
                       <s-text-field
                         name="collection"
-                        label="Collection"
-                        placeholder="Enter collection"
+                        label={
+                          triggerType === "specific-products" 
+                            ? "Products" 
+                            : triggerType === "tags" 
+                            ? "Tags" 
+                            : "Collection"
+                        }
+                        placeholder={
+                          triggerType === "specific-products" 
+                            ? "Enter products" 
+                            : triggerType === "tags" 
+                            ? "Enter tags" 
+                            : "Enter collection"
+                        }
+                        disabled={triggerType === "all-products"}
+                        onFocus={() => {
+                          if (triggerType !== "all-products") openTriggerModal();
+                        }}
+                        onInput={(e) => {
+                          if (triggerType === "all-products") return;
+                          setTriggerModalSearch(e.currentTarget.value || "");
+                          openTriggerModal();
+                        }}
                       />
                     </s-box>
 
-                    <s-button variant="secondary">Browse</s-button>
+                    <s-button
+                      variant="secondary"
+                      commandFor="trigger-modal"
+                      disabled={triggerType === "all-products"}
+                      onClick={() => {
+                        if (triggerType !== "all-products") {
+                          openTriggerModal();
+                        }
+                      }}
+                    >
+                      Browse
+                    </s-button>
                   </s-stack>
+
+                  {/* Selected items list */}
+                  {selectedItems.length > 0 && (
+                    <s-stack direction="block" gap="small" paddingBlockStart="base">
+                      {selectedItems.map((item: any) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--p-space-400)",
+                            padding: "var(--p-space-300)",
+                            backgroundColor: "var(--p-color-bg-surface-secondary)",
+                            borderRadius: "var(--p-border-radius-base)",
+                          }}
+                        >
+                          {item.image && (
+                            <div style={{ width: "48px", height: "48px", borderRadius: "var(--p-border-radius-base)", overflow: "hidden", flexShrink: 0 }}>
+                              <img
+                                src={item.image}
+                                alt={item.imageAlt || item.title}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            </div>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <s-text>{item.title}</s-text>
+                          </div>
+                          <s-stack direction="inline" gap="small" alignItems="center">
+                            {/* View button */}
+                            {triggerType !== "tags" && (
+                              <s-button
+                                variant="tertiary"
+                                onClick={() => {
+                                  const shopDomain = window.location.search.match(/shop=([^&]+)/)?.[1] || "";
+                                  if (shopDomain && item.id) {
+                                    const idParts = item.id.split("/");
+                                    const resourceId = idParts[idParts.length - 1];
+                                    
+                                    if (triggerType === "specific-products") {
+                                      window.open(`https://${shopDomain}/admin/products/${resourceId}`, "_blank");
+                                    } else if (triggerType === "collections") {
+                                      window.open(`https://${shopDomain}/admin/collections/${resourceId}`, "_blank");
+                                    }
+                                  }
+                                }}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path d="M8 3C5.5 3 3.5 5 3.5 8C3.5 11 5.5 13 8 13C10.5 13 12.5 11 12.5 8C12.5 5 10.5 3 8 3ZM8 11.5C6.6 11.5 5.5 10.4 5.5 9C5.5 7.6 6.6 6.5 8 6.5C9.4 6.5 10.5 7.6 10.5 9C10.5 10.4 9.4 11.5 8 11.5Z" fill="currentColor"/>
+                                  <path d="M8 7.5C7.4 7.5 7 7.9 7 8.5C7 9.1 7.4 9.5 8 9.5C8.6 9.5 9 9.1 9 8.5C9 7.9 8.6 7.5 8 7.5Z" fill="currentColor"/>
+                                </svg>
+                              </s-button>
+                            )}
+                            {/* Remove button */}
+                            <s-button
+                              variant="tertiary"
+                              onClick={() => {
+                                setSelectedItems((prev) => {
+                                  const updated = prev.filter((i) => i.id !== item.id);
+                                  const remainingTitles = updated.map((i) => i.title).join(", ");
+                                  const textField = document.querySelector('input[name="collection"]') as HTMLInputElement;
+                                  if (textField) {
+                                    textField.value = remainingTitles;
+                                  }
+                                  return updated;
+                                });
+                              }}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </s-button>
+                          </s-stack>
+                        </div>
+                      ))}
+                    </s-stack>
+                  )}
 
                   <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
                     <s-button variant="secondary">Add condition</s-button>
@@ -301,8 +502,183 @@ export default function Index() {
                   </s-stack>
                 </s-stack>
 
-              </s-section>
+                {/* Trigger browse/search modal */}
+                <s-modal 
+                  id="trigger-modal" 
+                  heading={
+                    triggerType === "specific-products" 
+                      ? "Add products" 
+                      : triggerType === "tags" 
+                      ? "Add tags" 
+                      : "Add collections"
+                  }
+                >
+                  <s-stack direction="block" gap="base">
+                    <s-text-field
+                      name="triggerModalSearch"
+                      label=""
+                      placeholder="Search"
+                      value={triggerModalSearch}
+                      onInput={(e) => setTriggerModalSearch(e.currentTarget.value || "")}
+                    />
 
+                    {/* Loading state */}
+                    {triggerModalLoading && (
+                      <s-stack direction="block" gap="base" alignItems="center" paddingBlock="large">
+                        <s-spinner size="large" />
+                        <s-text>Loading...</s-text>
+                      </s-stack>
+                    )}
+
+                    {/* Error state */}
+                    {!triggerModalLoading && triggerModalError && (
+                      <s-stack direction="block" gap="base" paddingBlock="base">
+                        <s-text tone="critical">{triggerModalError}</s-text>
+                      </s-stack>
+                    )}
+
+                    {/* Data list */}
+                    {!triggerModalLoading && !triggerModalError && (
+                      <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+                        <s-stack direction="block" gap="small">
+                          {triggerModalData.length === 0 ? (
+                            <s-text>No results found</s-text>
+                          ) : (
+                            triggerModalData.map((item: any) => {
+                              const itemId = item.id || item.name || item.title;
+                              const itemTitle = item.title || item.name || "";
+                              const itemImage = item.image || null;
+                              const itemImageAlt = item.imageAlt || itemTitle;
+                              
+                              // Get count text based on type
+                              let countText = "";
+                              if (triggerType === "collections") {
+                                countText = item.productsCount !== undefined ? `${item.productsCount} products` : "";
+                              } else if (triggerType === "specific-products") {
+                                countText = ""; // Products don't need count
+                              } else if (triggerType === "tags") {
+                                countText = ""; // Tags don't need count
+                              }
+
+                              return (
+                                <s-stack key={itemId} direction="inline" gap="base" alignItems="center">
+                                  {itemImage && (
+                                    <div style={{ width: "40px", height: "40px", borderRadius: "var(--p-border-radius-base)", overflow: "hidden", flexShrink: 0 }}>
+                                      <img
+                                        src={itemImage}
+                                        alt={itemImageAlt}
+                                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                      />
+                                    </div>
+                                  )}
+                                  <s-checkbox
+                                    name={itemId}
+                                    label={countText ? `${itemTitle} — ${countText}` : itemTitle}
+                                    checked={Boolean(triggerModalSelected[itemId])}
+                                    onChange={() => {
+                                      // Toggle the checked state
+                                      setTriggerModalSelected((prev) => ({
+                                        ...prev,
+                                        [itemId]: !prev[itemId],
+                                      }));
+                                    }}
+                                  />
+                                </s-stack>
+                              );
+                            })
+                          )}
+                        </s-stack>
+                      </div>
+                    )}
+
+                    {/* Footer actions */}
+                    <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+                      <s-text>
+                        {Object.values(triggerModalSelected).filter(Boolean).length}/50{" "}
+                        {triggerType === "specific-products" 
+                          ? "products" 
+                          : triggerType === "tags" 
+                          ? "tags" 
+                          : "collections"}{" "}
+                        selected
+                      </s-text>
+                      <s-stack direction="inline" gap="base">
+                        <s-button 
+                          variant="secondary"
+                          onClick={() => {
+                            setIsTriggerModalOpen(false);
+                            const modal = document.getElementById("trigger-modal") as any;
+                            if (modal && typeof modal.hide === "function") {
+                              modal.hide();
+                            } else if (modal && "open" in modal) {
+                              modal.open = false;
+                            } else if (modal) {
+                              modal.removeAttribute("open");
+                            }
+                          }}
+                        >
+                          Cancel
+                        </s-button>
+                        <s-button
+                          variant="primary"
+                          disabled={Object.values(triggerModalSelected).filter(Boolean).length === 0}
+                          onClick={() => {
+                            // Get newly selected items from modal
+                            const newlySelectedItems = triggerModalData
+                              .filter((item: any) => {
+                                const itemId = item.id || item.name || item.title;
+                                return triggerModalSelected[itemId];
+                              })
+                              .map((item: any) => ({
+                                id: item.id || item.name || item.title,
+                                title: item.title || item.name || "",
+                                image: item.image || null,
+                                imageAlt: item.imageAlt || item.title || item.name || "",
+                                handle: item.handle || null,
+                              }));
+
+                            // Add to existing selected items (avoid duplicates)
+                            setSelectedItems((prev) => {
+                              const existingIds = new Set(prev.map((item) => item.id));
+                              const newItems = newlySelectedItems.filter(
+                                (item) => !existingIds.has(item.id)
+                              );
+                              const updated = [...prev, ...newItems];
+                              
+                              // Update the text field with selected items
+                              const allSelectedTitles = updated.map((item) => item.title).join(", ");
+                              const textField = document.querySelector('input[name="collection"]') as HTMLInputElement;
+                              if (textField) {
+                                textField.value = allSelectedTitles;
+                              }
+                              
+                              return updated;
+                            });
+
+                            // Clear modal selections
+                            setTriggerModalSelected({});
+
+                            // Close modal
+                            setIsTriggerModalOpen(false);
+                            const modal = document.getElementById("trigger-modal") as any;
+                            if (modal && typeof modal.hide === "function") {
+                              modal.hide();
+                            } else if (modal && "open" in modal) {
+                              modal.open = false;
+                            } else if (modal) {
+                              modal.removeAttribute("open");
+                            }
+                          }}
+                        >
+                          Add
+                        </s-button>
+                      </s-stack>
+                    </s-stack>
+                  </s-stack>
+                </s-modal>
+
+              </s-section>
+{/* offer ......................................................................... */}
               {/* Offers */}
               <s-section>
                 <s-heading>Offers</s-heading>
@@ -503,8 +879,8 @@ export default function Index() {
               <s-stack paddingBlockEnd="large-500" direction="inline" gap="base" justifyContent="end">
                 <s-button variant="primary" tone="critical">Delete campaign</s-button>
 
-                <s-button 
-                  variant="primary" 
+                <s-button
+                  variant="primary"
                   type="button"
                   onClick={handleSaveCampaign}
                   commandFor="modal"
@@ -544,7 +920,7 @@ export default function Index() {
                           </s-stack>
                         </s-button>
                       </s-stack>
-                      
+
                       <s-text>
                         {[validationResults.campaignActive, validationResults.productsValid, validationResults.postPurchaseConfigured].filter(Boolean).length}/3 checks passed
                       </s-text>
@@ -554,13 +930,13 @@ export default function Index() {
                         <s-stack direction="inline" gap="small" alignItems="center">
                           {validationResults.campaignActive ? (
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none"/>
-                              <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none" />
+                              <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           ) : (
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="none"/>
-                              <path d="M7 7L13 13M13 7L7 13" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round"/>
+                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="none" />
+                              <path d="M7 7L13 13M13 7L7 13" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round" />
                             </svg>
                           )}
                           <s-text>Campaign is active</s-text>
@@ -570,13 +946,13 @@ export default function Index() {
                         <s-stack direction="inline" gap="small" alignItems="center">
                           {validationResults.productsValid ? (
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none"/>
-                              <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none" />
+                              <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           ) : (
                             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="none"/>
-                              <path d="M7 7L13 13M13 7L7 13" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round"/>
+                              <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="none" />
+                              <path d="M7 7L13 13M13 7L7 13" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round" />
                             </svg>
                           )}
                           <s-text>Products are valid and available in online store</s-text>
@@ -587,13 +963,13 @@ export default function Index() {
                           <s-stack direction="inline" gap="small" alignItems="center">
                             {validationResults.postPurchaseConfigured ? (
                               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none"/>
-                                <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-success)" strokeWidth="2" fill="none" />
+                                <path d="M6 10L9 13L14 7" stroke="var(--p-color-icon-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                               </svg>
                             ) : (
                               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="var(--p-color-bg-critical-subdued)"/>
-                                <path d="M10 6V10M10 14H10.01" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round"/>
+                                <circle cx="10" cy="10" r="9" stroke="var(--p-color-icon-critical)" strokeWidth="2" fill="var(--p-color-bg-critical-subdued)" />
+                                <path d="M10 6V10M10 14H10.01" stroke="var(--p-color-icon-critical)" strokeWidth="2" strokeLinecap="round" />
                               </svg>
                             )}
                             <s-text>Selleasy app is not configured for Post-purchase page</s-text>
@@ -619,7 +995,7 @@ export default function Index() {
                                 <s-stack direction="inline" gap="small" alignItems="center">
                                   <span>Go to store settings</span>
                                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M6 3H3C2.44772 3 2 3.44772 2 4V13C2 13.5523 2.44772 14 3 14H12C12.5523 14 13 13.5523 13 13V10M10 2H14M14 2V6M14 2L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M6 3H3C2.44772 3 2 3.44772 2 4V13C2 13.5523 2.44772 14 3 14H12C12.5523 14 13 13.5523 13 13V10M10 2H14M14 2V6M14 2L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                                   </svg>
                                 </s-stack>
                               </s-button>
@@ -647,7 +1023,7 @@ export default function Index() {
                           <s-stack direction="inline" gap="small" alignItems="center">
                             <span>View in your store</span>
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M6 3H3C2.44772 3 2 3.44772 2 4V13C2 13.5523 2.44772 14 3 14H12C12.5523 14 13 13.5523 13 13V10M10 2H14M14 2V6M14 2L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M6 3H3C2.44772 3 2 3.44772 2 4V13C2 13.5523 2.44772 14 3 14H12C12.5523 14 13 13.5523 13 13V10M10 2H14M14 2V6M14 2L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </s-stack>
                         </s-button>

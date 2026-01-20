@@ -2,7 +2,7 @@
 
 client_id = "c08b448c95bb8a19b34dd602e7727452"
 name = "SmartSell"
-application_url = "https://agaricaceous-breana-floggingly.ngrok-free.dev"
+application_url = "https://smart-sell.fly.dev"
 embedded = true
 
 [build]
@@ -24,4 +24,8 @@ api_version = "2025-10"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://agaricaceous-breana-floggingly.ngrok-free.dev/auth" ]
+redirect_urls = [
+  "https://smart-sell.fly.dev/auth/callback",
+  "https://smart-sell.fly.dev/auth/shopify/callback",
+  "https://smart-sell.fly.dev/api/auth/callback"
+]
