@@ -220,24 +220,125 @@ export default function Index() {
       return;
     }
 
-    const payload = {
-      campaignName: campaignName.trim(),
-      trigger: {
-        type: triggerType || "all-products",
-        items: selectedItems,
-      },
-      offers: {
-        selectionMethod,
-        items: selectedOfferItems,
-      },
+    // Collect all form data
+    const form = document.querySelector('form[data-save-bar]') as HTMLFormElement;
+    const formData = form ? new FormData(form) : null;
+
+    // Map trigger type to backend format
+    const mapTriggerType = (type: string): string => {
+      if (type === "all-products") return "all_products";
+      if (type === "specific-products") return "specific_products";
+      if (type === "tags") return "tags";
+      if (type === "collections") return "collections";
+      return "all_products";
     };
+
+    // Map offer type to backend format
+    const mapOfferType = (type: string): string => {
+      if (type === "variants") return "specific_variants";
+      return "specific_products";
+    };
+
+    // Convert date and time to ISO format
+    const formatDateTime = (date: string, time: string): string | null => {
+      if (!date) return null;
+      try {
+        // Parse date (assuming format like "2026-01-16")
+        const dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) return null;
+        
+        // Parse time (assuming format like "12:37 AM" or "12:37:00")
+        let hours = 0, minutes = 0;
+        if (time) {
+          const timeMatch = time.match(/(\d+):(\d+)/);
+          if (timeMatch) {
+            hours = parseInt(timeMatch[1]);
+            minutes = parseInt(timeMatch[2]);
+            // Handle AM/PM
+            if (time.toLowerCase().includes("pm") && hours !== 12) hours += 12;
+            if (time.toLowerCase().includes("am") && hours === 12) hours = 0;
+          }
+        }
+        
+        dateObj.setHours(hours, minutes, 0, 0);
+        return dateObj.toISOString();
+      } catch {
+        return null;
+      }
+    };
+
+    // Extract GIDs from items (items already contain id field)
+    const extractGIDs = (items: any[]): string[] => {
+      return items.map((item) => item.id || "").filter((id) => id);
+    };
+
+    const startDate = formData?.get("startDate")?.toString() || "";
+    const startTime = formData?.get("startTime")?.toString() || "";
+    const endDate = formData?.get("endDate")?.toString() || "";
+    const endTime = formData?.get("endTime")?.toString() || "";
+
+    const startsAt = formatDateTime(startDate, startTime) || new Date().toISOString();
+    const endsAtValue = setEndDate && endDate ? formatDateTime(endDate, endTime) : null;
+
+    const payload: {
+      name: string;
+      description: string;
+      surface: string;
+      priority: number;
+      offersMode: string;
+      triggerConditions: { type: string; items: string[] };
+      offerSelection: { type: string; items: string[] };
+      startsAt: string;
+      endsAt?: string;
+    } = {
+      name: campaignName.trim(),
+      description: formData?.get("campaignSubtitle")?.toString() || "",
+      surface: "product_page",
+      priority: formData?.get("campaignPriority") ? parseInt(formData.get("campaignPriority") as string) || 10 : 10,
+      offersMode: selectionMethod || "manual",
+      triggerConditions: {
+        type: mapTriggerType(triggerType || "all-products"),
+        items: extractGIDs(selectedItems),
+      },
+      offerSelection: {
+        type: mapOfferType(offerType),
+        items: extractGIDs(selectedOfferItems),
+      },
+      startsAt,
+    };
+
+    // Only include endsAt if it's set and valid
+    if (endsAtValue) {
+      payload.endsAt = endsAtValue;
+    }
 
     try {
       setIsSaving(true);
-      const response = await fetch(`${BACKEND_BASE_URL}/api/ingest`, {
+      
+      // Get session token from server (App Bridge automatically adds it to fetch requests to same domain)
+      const tokenResponse = await fetch("/api/get-token", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error("Failed to get session token");
+      }
+
+      const tokenData = await tokenResponse.json();
+      const sessionToken = tokenData.token;
+
+      if (!sessionToken) {
+        throw new Error("Session token not available");
+      }
+      
+      const response = await fetch(`${BACKEND_BASE_URL}/campaigns`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionToken}`,
         },
         body: JSON.stringify(payload),
       });
