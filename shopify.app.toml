@@ -2,7 +2,9 @@
 
 client_id = "c08b448c95bb8a19b34dd602e7727452"
 name = "SmartSell"
-application_url = "https://smart-sell.fly.dev"
+# IMPORTANT: Update this URL to your production HTTPS URL before deploying
+# The CLI will automatically update this URL when running 'shopify app dev'
+application_url = "https://agaricaceous-breana-floggingly.ngrok-free.dev"
 embedded = true
 
 [build]
@@ -13,19 +15,23 @@ api_version = "2025-10"
 
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
-  uri = "/webhooks/app/uninstalled"
+  # Webhook URIs must be full HTTPS URLs for deployment
+  uri = "https://agaricaceous-breana-floggingly.ngrok-free.dev/webhooks/app/uninstalled"
 
   [[webhooks.subscriptions]]
   topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
+  # Webhook URIs must be full HTTPS URLs for deployment
+  uri = "https://agaricaceous-breana-floggingly.ngrok-free.dev/webhooks/app/scopes_update"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_products"
 
 [auth]
+# IMPORTANT: Update these URLs to your production HTTPS URLs before deploying
+# The CLI will automatically update these URLs when running 'shopify app dev'
 redirect_urls = [
-  "https://smart-sell.fly.dev/auth/callback",
-  "https://smart-sell.fly.dev/auth/shopify/callback",
-  "https://smart-sell.fly.dev/api/auth/callback"
+  "https://agaricaceous-breana-floggingly.ngrok-free.dev/auth/callback",
+  "https://agaricaceous-breana-floggingly.ngrok-free.dev/auth/shopify/callback",
+  "https://agaricaceous-breana-floggingly.ngrok-free.dev/api/auth/callback"
 ]
