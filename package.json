@@ -16,6 +16,7 @@
     "shopify": "shopify",
     "prisma": "prisma",
     "prisma:generate": "prisma generate",
+    "prisma:migrate": "cross-env DATABASE_URL=file:./prisma/dev.sqlite prisma migrate deploy",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit"
