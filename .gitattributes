@@ -1,0 +1,6 @@
+# Git attributes to help with OneDrive sync issues on Windows
+*.node binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary

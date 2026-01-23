@@ -199,6 +199,29 @@ This is because a JWT token is expired. If you are consistently getting this err
 
 If you choose to use MongoDB with Prisma, there are some gotchas in Prisma's MongoDB support to be aware of. Please see the [Prisma SessionStorage README](https://www.npmjs.com/package/@shopify/shopify-app-session-storage-prisma#mongodb).
 
+### OneDrive File Locking Issues (Windows)
+
+If your project is located in a OneDrive-synced folder on Windows, you may encounter Prisma generation errors:
+
+```
+EPERM: operation not permitted, rename '...\query_engine-windows.dll.node.tmp...' -> '...\query_engine-windows.dll.node'
+```
+
+This happens because OneDrive locks files during sync, preventing Prisma from renaming temporary files.
+
+**Fixes (in order of preference):**
+
+1. **Move your project outside OneDrive** (Recommended): Move your project to a non-synced directory like `C:\Dev\` or `C:\Projects\`.
+
+2. **Exclude node_modules from OneDrive sync**:
+   - Right-click the `node_modules` folder
+   - Select "Always keep on this device" to prevent cloud sync
+   - Or add it to OneDrive's exclusion list
+
+3. **Use the safe wrapper script** (Already configured): This project includes `prisma-generate-safe.sh` that allows the dev server to start even if Prisma generation fails. The Prisma client will be used from a previous successful generation.
+
+The dev server will display a warning but continue to work if the Prisma client was previously generated successfully.
+
 ### Unable to require(`C:\...\query_engine-windows.dll.node`).
 
 Unable to require(`C:\...\query_engine-windows.dll.node`).

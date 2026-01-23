@@ -34,9 +34,20 @@ model Session {
 }
 
 model Shop {
-  id                  String   @id @default(uuid())
-  shop                String   @unique
-  onboardingCompleted Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                  String            @id @default(uuid())
+  shop                String            @unique
+  onboardingCompleted Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  storefrontToken     StorefrontToken?
+}
+
+model StorefrontToken {
+  id        String   @id @default(uuid())
+  shop      String   @unique
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shopId    String   @unique
+  shopRecord Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }

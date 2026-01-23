@@ -1,0 +1,16 @@
+name = "checkout"
+type = "web_pixel_extension"
+uid = "bb5fc581-c211-9a70-dfdf-1804253873ab1484698c"
+
+runtime_context = "strict"
+
+[settings]
+type = "object"
+
+[settings.fields.accountID]
+name = "Account ID"
+description = "Account ID"
+type = "single_line_text_field"
+validations =  [
+  { name = "min", value = "1" }
+]
