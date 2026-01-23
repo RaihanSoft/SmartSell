@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import type { HeadersFunction } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
 
 type CampaignStep = "dashboard" | "campaign-types" | "campaign-form";
 type CampaignType = "list" | "amazon" | "classic" | null;
@@ -11,11 +12,81 @@ const BACKEND_BASE_URL =
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_BACKEND_BASE_URL) ||
   "https://agaricaceous-breana-floggingly.ngrok-free.dev";
 
+// Loader function to automatically create web pixel when user visits dashboard
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin, session } = await authenticate.admin(request);
+  
+  // Automatically create web pixel when user visits the dashboard
+  try {
+    console.log("🎯 Checking/creating web pixel for shop:", session.shop);
+
+    // GraphQL mutation to create web pixel
+    const mutation = `
+      mutation webPixelCreate($webPixel: WebPixelInput!) {
+        webPixelCreate(webPixel: $webPixel) {
+          userErrors {
+            code
+            field
+            message
+          }
+          webPixel {
+            settings
+            id
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      webPixel: {
+        settings: JSON.stringify({ accountID: "123" }),
+      },
+    };
+
+    const response = await admin.graphql(mutation, {
+      variables,
+    });
+
+    const data: any = await response.json();
+
+    // Check for GraphQL errors
+    if (data.errors) {
+      console.error("❌ GraphQL errors creating web pixel:", JSON.stringify(data.errors, null, 2));
+    } else {
+      // Check for user errors
+      const userErrors = data?.data?.webPixelCreate?.userErrors || [];
+      if (userErrors.length > 0) {
+        // Check if web pixel already exists (common error)
+        const alreadyExists = userErrors.some(
+          (err: any) => 
+            err.message?.toLowerCase().includes("already exists") || 
+            err.code === "TAKEN" ||
+            err.message?.toLowerCase().includes("duplicate")
+        );
+        if (alreadyExists) {
+          console.log("ℹ️ Web pixel already exists for this shop");
+        } else {
+          console.error("❌ Web pixel creation user errors:", JSON.stringify(userErrors, null, 2));
+        }
+      } else {
+        const webPixel = data?.data?.webPixelCreate?.webPixel;
+        console.log("✅ Web pixel created successfully:", webPixel?.id);
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error creating web pixel:", error);
+    // Don't fail the page load if web pixel creation fails
+  }
+
+  return { webPixelCreated: true };
+};
+
 export default function Index() {
   const shopify = useAppBridge();
   const [currentStep, setCurrentStep] = useState<CampaignStep>("dashboard");
   const [selectedCampaignType, setSelectedCampaignType] = useState<CampaignType>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isEnabling, setIsEnabling] = useState(false);
   const [selectionMethod, setSelectionMethod] = useState<string>("manual");
   const [setEndDate, setSetEndDate] = useState<boolean>(false);
   const [isValidating, setIsValidating] = useState<boolean>(false);
@@ -410,6 +481,52 @@ export default function Index() {
       shopify.toast.show("Failed to refresh", { isError: true });
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  // Handle enable web pixel action
+  const handleEnable = async () => {
+    if (isEnabling) return; // Prevent multiple clicks
+
+    setIsEnabling(true);
+
+    try {
+      const response = await fetch("/api/webpixel-create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountID: "123", // You can make this dynamic or get from config
+        }),
+        // App Bridge automatically includes: authorization: Bearer <session_token>
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to enable web pixel");
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to enable web pixel");
+      }
+
+      // Show success toast
+      shopify.toast?.show?.("Web pixel enabled successfully");
+      
+      // Optionally update UI state or refresh data
+      // You might want to update the badge from "Disabled" to "Enabled"
+      
+    } catch (error) {
+      console.error("Enable error:", error);
+      shopify.toast?.show?.(
+        error instanceof Error ? error.message : "Failed to enable web pixel",
+        { isError: true }
+      );
+    } finally {
+      setIsEnabling(false);
     }
   };
 
@@ -1582,7 +1699,14 @@ export default function Index() {
                   </span>
                 )}
               </s-button>
-              <s-button variant="primary">Enable</s-button>
+              <s-button 
+                variant="primary" 
+                onClick={handleEnable}
+                loading={isEnabling}
+                disabled={isEnabling}
+              >
+                Enable
+              </s-button>
             </s-stack>
           </s-stack>
         </s-section>
