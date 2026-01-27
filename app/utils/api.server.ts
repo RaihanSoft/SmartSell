@@ -36,24 +36,34 @@ export function getSessionTokenFromRequest(request: Request): string | null {
  * @param request - Incoming request
  * @param endpoint - Backend endpoint path
  * @param options - Additional fetch options
+ * @param options.shopAccessToken - Optional shop access token for extension requests
  * @returns Promise<Response>
  */
 export async function forwardToBackend(
   request: Request,
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit & { shopAccessToken?: string } = {}
 ): Promise<Response> {
   const url = `${BACKEND_API_URL}${endpoint}`;
   
   // Extract session token from request headers
   const sessionToken = getSessionTokenFromRequest(request);
   
+  // Extract shop access token from options (for extension requests)
+  const shopAccessToken = options.shopAccessToken;
+  
   // Prepare headers for backend request
   const headers = new Headers(options.headers);
   
-  // Forward session token to backend
+  // Forward session token to backend (prefer session token over shop token)
   if (sessionToken) {
     headers.set("authorization", `Bearer ${sessionToken}`);
+    console.log("🔑 [FORWARD] Using App Bridge session token");
+  } else if (shopAccessToken) {
+    headers.set("authorization", `Bearer ${shopAccessToken}`);
+    console.log("🔑 [FORWARD] Using shop access token for extension request");
+  } else {
+    console.warn("⚠️ [FORWARD] No authentication token available");
   }
   
   // Forward other important headers
@@ -67,6 +77,11 @@ export async function forwardToBackend(
     headers.set("x-shopify-hmac-sha256", hmac);
   }
   
+  // Add ngrok header to skip browser warning (if using ngrok)
+  if (BACKEND_API_URL.includes("ngrok")) {
+    headers.set("ngrok-skip-browser-warning", "true");
+  }
+  
   // Set content type if body exists
   if (options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -78,11 +93,14 @@ export async function forwardToBackend(
     console.log("📤 Request method:", options.method || request.method);
     console.log("📋 Request headers:", Object.fromEntries(headers.entries()));
     
+    // Remove shopAccessToken from options before passing to fetch
+    const { shopAccessToken: _, ...fetchOptions } = options;
+    
     const response = await fetch(url, {
-      ...options,
-      method: options.method || request.method,
+      ...fetchOptions,
+      method: fetchOptions.method || request.method,
       headers,
-      body: options.body || (request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined),
+      body: fetchOptions.body || (request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined),
     });
     
     console.log("📥 Backend response status:", response.status);

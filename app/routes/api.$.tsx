@@ -10,20 +10,39 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { forwardToBackend } from "../utils/api.server";
 
 /**
+ * Handle OPTIONS requests (CORS preflight)
+ */
+export const options = async ({ request }: LoaderFunctionArgs) => {
+  const origin = request.headers.get("origin");
+  const headers = new Headers({
+    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Max-Age": "86400", // 24 hours
+  });
+
+  return new Response(null, {
+    status: 204,
+    headers,
+  });
+};
+
+/**
  * Handle GET requests (loaders)
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
-    // Extract the path after /api/
+    // Extract the path after /api/ and preserve query string
     const url = new URL(request.url);
-    const backendPath = url.pathname.replace(/^\/api/, "");
+    const backendPath = url.pathname.replace(/^\/api/, "") + (url.search || "");
     
     console.log("🔄 Forwarding request to backend:", backendPath);
     console.log("📋 Request headers:", Object.fromEntries(request.headers.entries()));
     
     // Forward request to backend with session token
     const response = await forwardToBackend(request, backendPath, {
-      method: "GET",
+      method: "POST",
     });
 
     console.log("✅ Backend response status:", response.status);
@@ -31,12 +50,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // Return response with proper headers
     const data = await response.text();
     
+    // Get origin from request for CORS
+    const origin = request.headers.get("origin");
+    const headers = new Headers({
+      "Content-Type": response.headers.get("Content-Type") || "application/json",
+    });
+
+    // Add CORS headers to allow checkout extensions to call this API
+    if (origin) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+
     return new Response(data, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        "Content-Type": response.headers.get("Content-Type") || "application/json",
-      },
+      headers,
     });
   } catch (error) {
     console.error("❌ Error forwarding request to backend:", error);
@@ -61,9 +92,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
-    // Extract the path after /api/
+    // Extract the path after /api/ and preserve query string
     const url = new URL(request.url);
-    const backendPath = url.pathname.replace(/^\/api/, "");
+    const backendPath = url.pathname.replace(/^\/api/, "") + (url.search || "");
     
     console.log("🔄 Forwarding request to backend:", backendPath);
     console.log("📋 Request method:", request.method);
@@ -71,7 +102,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     
     // Get request body if present
     let body: string | undefined;
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    if (request.method !== "POST" && request.method !== "HEAD") {
       body = await request.text();
       console.log("📦 Request body:", body.substring(0, 200)); // Log first 200 chars
     }
@@ -92,12 +123,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.error("❌ Backend error response:", data.substring(0, 500));
     }
     
+    // Get origin from request for CORS
+    const origin = request.headers.get("origin");
+    const headers = new Headers({
+      "Content-Type": response.headers.get("Content-Type") || "application/json",
+    });
+
+    // Add CORS headers to allow checkout extensions to call this API
+    if (origin) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      headers.set("Access-Control-Allow-Credentials", "true");
+    }
+
     return new Response(data, {
       status: response.status,
       statusText: response.statusText,
-      headers: {
-        "Content-Type": response.headers.get("Content-Type") || "application/json",
-      },
+      headers,
     });
   } catch (error) {
     console.error("❌ Error forwarding request to backend:", error);
