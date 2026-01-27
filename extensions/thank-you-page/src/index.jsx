@@ -115,7 +115,7 @@ function Extension() {
   };
 
   const fetchOffers = async () => {
-    console.log("🔘 [EXTENSION] Button clicked - fetchOffers called");
+    console.log("🔘 [EXTENSION] fetchOffers called");
     setLoading(true);
     setError(null);
     setOffers(null);
@@ -151,7 +151,7 @@ function Extension() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          surface: "thank-you-page",
+          surface: "product_page",
           productIds: productIds,
           shop: shopDomain, // Include shop domain if available
         }),
@@ -165,6 +165,13 @@ function Extension() {
       }
 
       const data = await response.json();
+      console.log("✅ [EXTENSION] Received offers data:", JSON.stringify(data, null, 2));
+      console.log("✅ [EXTENSION] Offers array:", data.offers);
+      console.log("✅ [EXTENSION] Offers length:", data.offers?.length);
+      if (data.offers && data.offers.length > 0) {
+        console.log("✅ [EXTENSION] First campaign:", data.offers[0]);
+        console.log("✅ [EXTENSION] First campaign offers:", data.offers[0].offers);
+      }
       setOffers(data);
     } catch (err) {
       console.error("Error fetching offers:", err);
@@ -174,15 +181,34 @@ function Extension() {
     }
   };
 
-  // Remove automatic call - API will be called when button is clicked
-  // useEffect(() => {
-  //   fetchOffers();
-  // }, []);
+  // Log offers state changes for debugging
+  useEffect(() => {
+    console.log("🔄 [EXTENSION] Offers state changed:", offers);
+    if (offers) {
+      console.log("🔄 [EXTENSION] Offers.offers:", offers.offers);
+      console.log("🔄 [EXTENSION] Offers.offers length:", offers.offers?.length);
+    }
+  }, [offers]);
+
+  // Automatically fetch offers when component mounts
+  useEffect(() => {
+    console.log("🚀 [EXTENSION] Component mounted, auto-fetching offers...");
+    fetchOffers();
+  }, []);
 
   // Render cross-sell UI with offers
   return (
     <s-banner heading="You might also like">
       <s-stack gap="base">
+        <s-button 
+          onClick={() => {
+            console.log("🔄 [EXTENSION] Refresh button clicked");
+            fetchOffers();
+          }}
+          disabled={loading}
+        >
+          {loading ? "Loading..." : "Refresh"}
+        </s-button>
         {loading && (
           <s-text>Loading recommended products...</s-text>
         )}
@@ -204,79 +230,153 @@ function Extension() {
           </s-stack>
         )}
 
-        {offers && offers.offers && offers.offers.length > 0 && (
-          <s-stack gap="base">
-            {offers.offers.map((campaign) => (
-              campaign.offers && campaign.offers.length > 0 && (
-                <s-stack key={campaign.campaignId || Math.random()} gap="small">
-                  {campaign.offers.map((offer) => {
-                    const product = offer.product;
-                    const selectedVariant = product?.variants?.find(
-                      (v) => v.id === offer.selectedVariantId
-                    ) || product?.variants?.[0];
+        {(() => {
+          if (!offers || !offers.offers || !Array.isArray(offers.offers) || offers.offers.length === 0) {
+            return null;
+          }
+          
+          // Flatten all offers from all campaigns for simpler rendering
+          const allOffers = [];
+          offers.offers.forEach((campaign) => {
+            if (campaign.offers && Array.isArray(campaign.offers)) {
+              campaign.offers.forEach((offer) => {
+                if (offer && offer.product) {
+                  allOffers.push(offer);
+                }
+              });
+            }
+          });
+          
+          console.log("✅ [EXTENSION] Total products to render:", allOffers.length);
+          console.log("✅ [EXTENSION] First product:", allOffers[0]?.product);
+          
+          if (allOffers.length === 0) {
+            return (
+              <s-text tone="subdued">No products to display</s-text>
+            );
+          }
+          
+          return (
+            <s-stack gap="base">
+              <s-text size="small" tone="subdued">
+                Found {allOffers.length} product(s)
+              </s-text>
+              {allOffers.map((offer, index) => {
+                const product = offer.product;
+                
+                console.log(`🎯 [EXTENSION] Rendering product ${index}:`, product?.title);
+                console.log(`🎯 [EXTENSION] Product ${index} data:`, product);
+                
+                if (!product) {
+                  console.warn(`⚠️ [EXTENSION] Offer ${index} has no product`);
+                  return null;
+                }
 
-                    return (
-                      <s-box
-                        key={offer.id}
-                        borderRadius="base"
-                        borderWidth="thin"
-                        padding="small"
-                      >
-                        <div style={{
-                          display: "flex",
-                          gap: "var(--p-space-300)",
-                          alignItems: "center"
-                        }}>
-                          {product?.image?.src && (
-                            <img
-                              src={product.image.src}
-                              alt={product.image.alt || product.title || "Product"}
-                              style={{
-                                width: "60px",
-                                height: "60px",
-                                objectFit: "cover",
-                                borderRadius: "var(--p-border-radius-base)"
-                              }}
-                            />
+                // Get the first variant (since selectedVariantId is null, use first variant)
+                const selectedVariant = product?.variants && product.variants.length > 0
+                  ? product.variants[0]
+                  : null;
+                
+                // Use variant price if available, otherwise use product minPrice
+                const price = selectedVariant?.price || product?.minPrice || "0.00";
+                const compareAtPrice = selectedVariant?.compareAtPrice || null;
+                
+                console.log(`💰 [EXTENSION] Product ${index}: ${product.title}, Price: $${price}, Compare: $${compareAtPrice || 'N/A'}`);
+                console.log(`✅ [EXTENSION] Rendering product card for: ${product.title}`);
+                
+                // Build product URL
+                const productUrl = product.handle 
+                  ? `/products/${product.handle}` 
+                  : `#`;
+
+                return (
+                  <s-box
+                    key={`product-${index}-${offer.id || product.id || Math.random()}`}
+                    borderRadius="base"
+                    padding="base"
+                    border="base"
+                  >
+                        <s-stack direction="inline" gap="base" alignItems="start">
+                          {/* Product Image */}
+                          {product?.image?.src ? (
+                            <s-box inlineSize="120px" blockSize="120px" borderRadius="base" overflow="hidden">
+                              <s-image
+                                src={product.image.src}
+                                alt={product.image.alt || product.title || "Product"}
+                                aspectRatio="1"
+                                inlineSize="100%"
+                                blockSize="100%"
+                              />
+                            </s-box>
+                          ) : (
+                            <s-box 
+                              inlineSize="120px" 
+                              blockSize="120px" 
+                              borderRadius="base" 
+                              background="subdued"
+                            >
+                              <s-text tone="subdued" size="small">No Image</s-text>
+                            </s-box>
                           )}
-                          <s-stack gap="small">
-                            <s-text fontWeight="semibold">
+
+                          {/* Product Details */}
+                          <s-stack direction="block" gap="small" flex="1">
+                            {/* Product Name */}
+                            <s-text size="large" emphasis="strong">
                               {product?.title || "Product"}
                             </s-text>
-                            {selectedVariant && (
-                              <s-text tone="subdued" fontSize="small">
-                                {selectedVariant.title}
+
+                            {/* Vendor */}
+                            {product?.vendor && (
+                              <s-text size="small" tone="subdued">
+                                {product.vendor}
                               </s-text>
                             )}
-                            {selectedVariant?.price && (
-                              <s-text fontWeight="semibold">
-                                ${parseFloat(selectedVariant.price).toFixed(2)}
+
+                            {/* Price */}
+                            <s-stack direction="inline" gap="small" alignItems="center">
+                              <s-text size="medium" emphasis="strong">
+                                ${parseFloat(price).toFixed(2)}
                               </s-text>
+                              {compareAtPrice && parseFloat(compareAtPrice) > parseFloat(price) && (
+                                <s-text size="small" tone="subdued">
+                                  ${parseFloat(compareAtPrice).toFixed(2)}
+                                </s-text>
+                              )}
+                            </s-stack>
+
+                            {/* View Product Link */}
+                            {product.handle && (
+                              <s-button
+                                href={productUrl}
+                                variant="primary"
+                                size="small"
+                              >
+                                View Product
+                              </s-button>
                             )}
                           </s-stack>
-                        </div>
+                        </s-stack>
                       </s-box>
-                    );
-                  })}
-                </s-stack>
-              )
-            ))}
-          </s-stack>
-        )}
+                  );
+                })}
+            </s-stack>
+          );
+        })()}
 
         {!loading && !error && (!offers || !offers.offers || offers.offers.length === 0) && (
           <s-stack gap="base">
             <s-text>
-              Complete your look with these recommended products!
+              No recommended products available at this time.
             </s-text>
             <s-button 
               onClick={() => {
-                console.log("🔘 [EXTENSION] Button onClick triggered");
+                console.log("🔘 [EXTENSION] Retry button clicked");
                 fetchOffers();
               }}
               disabled={loading}
             >
-              {loading ? "Loading..." : "View Recommended Products"}
+              {loading ? "Loading..." : "Retry"}
             </s-button>
           </s-stack>
         )}

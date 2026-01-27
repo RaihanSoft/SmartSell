@@ -123,6 +123,10 @@ export default function Index() {
   const [offerModalError, setOfferModalError] = useState<string | null>(null);
   const [isOfferModalOpen, setIsOfferModalOpen] = useState<boolean>(false);
   const [selectedOfferItems, setSelectedOfferItems] = useState<any[]>([]);
+  
+  // Offers response state
+  const [offersResponse, setOffersResponse] = useState<any>(null);
+  const [selectedOffers, setSelectedOffers] = useState<Record<string, boolean>>({});
 
   const openTriggerModal = () => {
     const modal = document.getElementById("trigger-modal") as any;
@@ -405,11 +409,12 @@ export default function Index() {
         throw new Error("Session token not available");
       }
       
-      const response = await fetch(`${BACKEND_BASE_URL}/campaigns`, {
+      const response = await fetch(`${BACKEND_BASE_URL}/api/campaigns`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionToken}`,
+        
         },
         body: JSON.stringify(payload),
       });
@@ -418,6 +423,10 @@ export default function Index() {
         throw new Error(`Backend responded with ${response.status}`);
       }
 
+      const responseData = await response.json();
+      console.log("📦 [OFFERS] Response data:", responseData);
+      console.log("📦 [OFFERS] Offers array:", responseData?.offers);
+      setOffersResponse(responseData);
       shopify.toast?.show?.("Campaign data sent to backend successfully.");
     } catch (error) {
       console.error("Error sending campaign to backend:", error);
@@ -1672,7 +1681,145 @@ export default function Index() {
 
       )}
 
+      {/* Offers Display Section - Show offers response */}
+      {(() => {
+        console.log("🔍 [OFFERS] Render check:", {
+          hasOffersResponse: !!offersResponse,
+          offersResponse: offersResponse,
+          hasOffers: !!offersResponse?.offers,
+          offersLength: offersResponse?.offers?.length
+        });
+        return offersResponse && offersResponse.offers && Array.isArray(offersResponse.offers) && offersResponse.offers.length > 0;
+      })() && (
+        <s-section>
+          <s-stack direction="block" gap="base">
+            <s-heading>You might also like these</s-heading>
+            console.log("📦 [OFFERS] Offers response:", offersResponse);
+            
+            <s-stack direction="block" gap="base">
+              {offersResponse.offers.map((campaign: any) => {
+                if (!campaign.offers || campaign.offers.length === 0) return null;
+                
+                return (
+                  <s-stack key={campaign.campaignId} direction="block" gap="small">
+                    {campaign.offers.map((offer: any) => {
+                      const product = offer.product;
+                      const selectedVariant = product?.variants?.find(
+                        (v: any) => v.id === offer.selectedVariantId
+                      ) || product?.variants?.[0];
+                      const offerKey = `${offer.id}-${offer.selectedVariantId || ''}`;
+                      const isSelected = selectedOffers[offerKey] || false;
 
+                      return (
+                        <s-box
+                          key={offerKey}
+                          borderRadius="base"
+                          padding="base"
+                        >
+                          <s-stack direction="inline" gap="base" alignItems="start">
+                            {/* Checkbox */}
+                            <s-stack direction="block" alignItems="start" paddingBlockStart="small">
+                              <s-checkbox
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  const checked = Boolean(e.currentTarget.checked);
+                                  setSelectedOffers(prev => {
+                                    const next = { ...prev };
+                                    next[offerKey] = checked;
+                                    return next;
+                                  });
+                                }}
+                                label=""
+                              />
+                            </s-stack>
+
+                            {/* Product Image */}
+                            {product?.image?.src && (
+                              <s-box inlineSize="100px" blockSize="100px" borderRadius="base">
+                                <s-image
+                                  src={product.image.src}
+                                  alt={product.image.alt || product.title || "Product"}
+                                  aspectRatio="1"
+                                  inlineSize="auto"
+                                />
+                              </s-box>
+                            )}
+
+                            {/* Product Details */}
+                            <s-stack direction="block" gap="small">
+                              {/* Product Title */}
+                              <s-text>
+                                {product?.title || "Product"}
+                              </s-text>
+
+                              {/* Variant Info */}
+                              {selectedVariant && offer.type === "specific_variants" && (
+                                <s-text>
+                                  <span style={{ color: "var(--p-color-text-subdued)" }}>
+                                    {selectedVariant.title}
+                                  </span>
+                                </s-text>
+                              )}
+
+                              {/* Price */}
+                              {selectedVariant?.price && (
+                                <s-text>
+                                  ${parseFloat(selectedVariant.price).toFixed(2)}
+                                  {selectedVariant?.compareAtPrice && (
+                                    <span style={{
+                                      marginLeft: "var(--p-space-200)",
+                                      textDecoration: "line-through",
+                                      color: "var(--p-color-text-subdued)"
+                                    }}>
+                                      ${parseFloat(selectedVariant.compareAtPrice).toFixed(2)}
+                                    </span>
+                                  )}
+                                </s-text>
+                              )}
+                            </s-stack>
+                          </s-stack>
+                        </s-box>
+                      );
+                    })}
+                  </s-stack>
+                );
+              })}
+            </s-stack>
+
+            {/* Select Items Button */}
+            <s-stack direction="inline" justifyContent="end" paddingBlockStart="base">
+              <s-button
+                variant="primary"
+                onClick={() => {
+                  const selectedOfferKeys = Object.keys(selectedOffers).filter(key => selectedOffers[key]);
+                  if (selectedOfferKeys.length > 0) {
+                    shopify.toast?.show?.(`${selectedOfferKeys.length} item(s) selected`);
+                    // You can add additional logic here to handle selected items
+                  } else {
+                    shopify.toast?.show?.("Please select at least one item", { isError: true });
+                  }
+                }}
+              >
+                Select items
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </s-section>
+      )}
+
+      {/* Debug: Show offersResponse state */}
+      {offersResponse && (
+        <s-section>
+          <s-stack direction="block" gap="small">
+            <s-heading>Debug: Offers Response</s-heading>
+            <s-text>
+              <pre style={{ fontSize: "12px", overflow: "auto" }}>
+                {JSON.stringify(offersResponse, null, 2)}
+              </pre>
+            </s-text>
+          </s-stack>
+        </s-section>
+      )}
 
       {/* Dashboard Content - Only show when on dashboard step */}
       {currentStep === "dashboard" && (
