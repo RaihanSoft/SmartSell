@@ -13,10 +13,93 @@ function Extension() {
   console.log("🔘 [EXTENSION] Full shopify object:", shopify);
   console.log("🔘 [EXTENSION] Lines:", shopify.lines);
   console.log("🔘 [EXTENSION] Shop:", shopify.shop);
-  
+
   const [loading, setLoading] = useState(false);
   const [offers, setOffers] = useState(null);
   const [error, setError] = useState(null);
+  const [selectedVariantIds, setSelectedVariantIds] = useState([]); // Stores full variant GIDs
+  const [checkoutUrl, setCheckoutUrl] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  // Extract numeric variant ID from GID format: gid://shopify/ProductVariant/123456
+  const getVariantId = (variantGid) => {
+    if (!variantGid) return null;
+    const match = variantGid.match(/\/ProductVariant\/(\d+)/);
+    return match ? match[1] : null;
+  };
+
+  // Toggle selection for a given variant (accepts full GID)
+  const toggleVariantSelection = (variantGid) => {
+    if (!variantGid) return;
+
+    setSelectedVariantIds((prev) => {
+      if (prev.includes(variantGid)) {
+        return prev.filter((id) => id !== variantGid);
+      }
+      return [...prev, variantGid];
+    });
+    // Reset checkout URL when selection changes
+    setCheckoutUrl(null);
+  };
+
+  // Checkout selected variants via backend API
+  const checkoutSelectedVariants = async () => {
+    if (!selectedVariantIds || selectedVariantIds.length === 0) {
+      return;
+    }
+
+    setCheckoutLoading(true);
+    setCheckoutUrl(null);
+    setError(null);
+
+    try {
+      const shopDomain = getShopDomain();
+      
+      if (!shopDomain) {
+        throw new Error("Shop domain not available");
+      }
+
+      console.log("🛒 [EXTENSION] Creating cart with variants:", selectedVariantIds);
+
+      // Call your backend API
+      const response = await fetch(`${APP_URL}/api/cart`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          shop: shopDomain,
+          lines: selectedVariantIds.map((variantGid) => ({
+            variantId: variantGid, // Full GID: gid://shopify/ProductVariant/12345
+            quantity: 1,
+          })),
+          note: "Cross-sell recommendation",
+        }),
+      });
+
+      console.log("📥 [EXTENSION] Cart API response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to create cart" }));
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ [EXTENSION] Cart created:", data);
+      
+      if (data.checkoutUrl) {
+        setCheckoutUrl(data.checkoutUrl);
+        console.log("✅ [EXTENSION] Checkout URL received:", data.checkoutUrl);
+      } else {
+        throw new Error("No checkoutUrl in response");
+      }
+    } catch (err) {
+      console.error("❌ [EXTENSION] Error creating cart:", err);
+      setError(err instanceof Error ? err.message : "Failed to create cart");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
 
   // APP_URL: This is your Shopify App URL (where React Router app is hosted)
   // This should match the "application_url" in shopify.app.toml
@@ -277,6 +360,10 @@ function Extension() {
                   ? product.variants[0]
                   : null;
                 
+                // Store full variant GID (not numeric ID) for API call
+                const variantGid = selectedVariant?.id || null;
+                const isSelected = variantGid ? selectedVariantIds.includes(variantGid) : false;
+
                 // Use variant price if available, otherwise use product minPrice
                 const price = selectedVariant?.price || product?.minPrice || "0.00";
                 const compareAtPrice = selectedVariant?.compareAtPrice || null;
@@ -297,6 +384,14 @@ function Extension() {
                     border="base"
                   >
                         <s-stack direction="inline" gap="base" alignItems="start">
+                          {/* Selection checkbox */}
+                          {variantGid && (
+                            <s-checkbox
+                              checked={isSelected}
+                              onChange={() => toggleVariantSelection(variantGid)}
+                            />
+                          )}
+
                           {/* Product Image */}
                           {product?.image?.src ? (
                             <s-box inlineSize="120px" blockSize="120px" borderRadius="base" overflow="hidden">
@@ -346,20 +441,59 @@ function Extension() {
                             </s-stack>
 
                             {/* View Product Link */}
-                            {product.handle && (
+                            {/* {product.handle && (
                               <s-button
                                 href={productUrl}
                                 variant="primary"
                                 size="small"
                               >
-                                View Product
+                                Buy Now
                               </s-button>
-                            )}
+                            )} */}
                           </s-stack>
                         </s-stack>
                       </s-box>
                   );
                 })}
+
+              {/* Checkout footer - visible only when at least one variant is selected */}
+              {selectedVariantIds.length > 0 && (
+                <s-box padding="base" border="base" borderRadius="base">
+                  <s-stack gap="base">
+                    <s-stack direction="inline" alignItems="center" justifyContent="space-between">
+                      <s-text size="medium" emphasis="strong">
+                        Total selected
+                      </s-text>
+                      <s-text size="medium">
+                        {selectedVariantIds.length} item(s)
+                      </s-text>
+                    </s-stack>
+                    
+                    {/* Show loading state or redirect button */}
+                    {checkoutLoading ? (
+                      <s-button variant="primary" size="large" disabled>
+                        Creating cart...
+                      </s-button>
+                    ) : checkoutUrl ? (
+                      <s-button
+                        variant="primary"
+                        size="large"
+                        href={checkoutUrl}
+                      >
+                        Go to Checkout →
+                      </s-button>
+                    ) : (
+                      <s-button
+                        variant="primary"
+                        size="large"
+                        onClick={checkoutSelectedVariants}
+                      >
+                        Checkout {selectedVariantIds.length} item(s)
+                      </s-button>
+                    )}
+                  </s-stack>
+                </s-box>
+              )}
             </s-stack>
           );
         })()}
