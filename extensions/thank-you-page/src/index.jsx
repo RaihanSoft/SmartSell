@@ -13,10 +13,145 @@ function Extension() {
   console.log("🔘 [EXTENSION] Full shopify object:", shopify);
   console.log("🔘 [EXTENSION] Lines:", shopify.lines);
   console.log("🔘 [EXTENSION] Shop:", shopify.shop);
-  
+
   const [loading, setLoading] = useState(false);
   const [offers, setOffers] = useState(null);
   const [error, setError] = useState(null);
+  const [selectedVariantIds, setSelectedVariantIds] = useState([]); // Stores full variant GIDs
+  const [checkoutUrl, setCheckoutUrl] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  // Extract numeric variant ID from GID format: gid://shopify/ProductVariant/123456
+  const getVariantId = (variantGid) => {
+    if (!variantGid) return null;
+    const match = variantGid.match(/\/ProductVariant\/(\d+)/);
+    return match ? match[1] : null;
+  };
+
+  // Helper function to compute cart URL from selected variants
+  const getCartUrl = () => {
+    if (!selectedVariantIds || selectedVariantIds.length === 0) {
+      return null;
+    }
+
+    try {
+      // Extract numeric variant IDs from GIDs
+      const variantIds = selectedVariantIds
+        .map((variantGid) => getVariantId(variantGid))
+        .filter((id) => id != null);
+
+      if (variantIds.length === 0) {
+        return null;
+      }
+
+      // Build cart URL in format: /cart/variantId1:quantity1,variantId2:quantity2
+      const cartItems = variantIds.map((variantId) => `${variantId}:1`).join(',');
+
+      // Get shop domain
+      const shopDomain = getShopDomain();
+      if (!shopDomain) {
+        return null;
+      }
+
+      // Build full cart URL
+      return `https://${shopDomain}/cart/${cartItems}`;
+    } catch (error) {
+      console.error("❌ [EXTENSION] Error building cart URL:", error);
+      return null;
+    }
+  };
+
+  // Toggle selection for a given variant (accepts full GID)
+  const toggleVariantSelection = (variantGid) => {
+    if (!variantGid) return;
+
+    setSelectedVariantIds((prev) => {
+      const isCurrentlySelected = prev.includes(variantGid);
+      const newSelection = isCurrentlySelected
+        ? prev.filter((id) => id !== variantGid)
+        : [...prev, variantGid];
+
+      console.log("🔄 [EXTENSION] Selection changed:", {
+        variantGid,
+        action: isCurrentlySelected ? "deselected" : "selected",
+        totalSelected: newSelection.length,
+        selectedIds: newSelection
+      });
+
+      return newSelection;
+    });
+    // Reset checkout URL when selection changes
+    setCheckoutUrl(null);
+  };
+
+  // Checkout selected variants - direct redirect to Shopify cart
+  const checkoutSelectedVariants = () => {
+    console.log("🔘 [EXTENSION] checkoutSelectedVariants called");
+    console.log("🔘 [EXTENSION] selectedVariantIds:", selectedVariantIds);
+
+    if (!selectedVariantIds || selectedVariantIds.length === 0) {
+      console.warn("⚠️ [EXTENSION] No products selected");
+      return;
+    }
+
+    try {
+      // Extract numeric variant IDs from GIDs
+      const variantIds = selectedVariantIds
+        .map((variantGid) => getVariantId(variantGid))
+        .filter((id) => id != null);
+
+      console.log("🔘 [EXTENSION] Extracted variant IDs:", variantIds);
+
+      if (variantIds.length === 0) {
+        console.error("❌ [EXTENSION] No valid variant IDs found");
+        setError("No valid products selected");
+        return;
+      }
+
+      // Build cart URL in format: /cart/variantId1:quantity1,variantId2:quantity2
+      const cartItems = variantIds.map((variantId) => `${variantId}:1`).join(',');
+
+      // Get shop domain
+      const shopDomain = getShopDomain();
+      if (!shopDomain) {
+        throw new Error("Shop domain not available");
+      }
+
+      // Build full cart URL
+      const cartUrl = `https://${shopDomain}/cart/${cartItems}`;
+      console.log("🛒 [EXTENSION] Cart URL:", cartUrl);
+
+      // Set checkoutUrl in state so button can use href attribute
+      setCheckoutUrl(cartUrl);
+
+      // Try redirect using anchor element (works in sandbox)
+      try {
+        const link = document.createElement('a');
+        link.href = cartUrl;
+        link.target = '_self';
+        link.style.position = 'absolute';
+        link.style.left = '-9999px';
+        document.body.appendChild(link);
+        link.click();
+
+        console.log("✅ [EXTENSION] Anchor click triggered");
+
+        // Clean up after redirect
+        setTimeout(() => {
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+        }, 1000);
+      } catch (redirectError) {
+        console.error("❌ [EXTENSION] Error with anchor redirect:", redirectError);
+        // Fallback: button with href will work
+        console.log("🔄 [EXTENSION] Using button href fallback");
+      }
+    } catch (error) {
+      console.error("❌ [EXTENSION] Error during checkout:", error);
+      setError(error instanceof Error ? error.message : "Failed to redirect to cart");
+    }
+  };
 
   // APP_URL: This is your Shopify App URL (where React Router app is hosted)
   // This should match the "application_url" in shopify.app.toml
@@ -33,13 +168,13 @@ function Extension() {
     if (shopify?.shop?.myshopifyDomain) {
       return shopify.shop.myshopifyDomain;
     }
-    
+
     // Fallback to shop.name if myshopifyDomain not available
     if (shopify?.shop?.name) {
       // Try to construct myshopifyDomain from name
       return `${shopify.shop.name}.myshopify.com`;
     }
-    
+
     console.warn("⚠️ [EXTENSION] Could not extract shop domain");
     return null;
   };
@@ -51,11 +186,11 @@ function Extension() {
       console.log("🔍 [EXTENSION] shopify.lines structure:", shopify.lines);
       console.log("🔍 [EXTENSION] shopify.lines.current:", shopify.lines?.current);
       console.log("🔍 [EXTENSION] shopify.lines.v:", shopify.lines?.v);
-      
+
       // shopify.lines is a reactive object, access the value
       // It might be shopify.lines.current or shopify.lines.v or just shopify.lines
       let lines = null;
-      
+
       if (shopify.lines) {
         // Try different ways to access the reactive value
         if (shopify.lines.current) {
@@ -72,39 +207,39 @@ function Extension() {
           console.log("✅ [EXTENSION] Using shopify.lines.v (from object check)");
         }
       }
-      
+
       console.log("🔘 [EXTENSION] Lines data:", lines);
       console.log("🔘 [EXTENSION] Lines is array?", Array.isArray(lines));
       console.log("🔘 [EXTENSION] Lines length:", lines?.length);
-      
+
       if (!lines || !Array.isArray(lines) || lines.length === 0) {
         console.warn("⚠️ [EXTENSION] No line items found");
         return [];
       }
-      
+
       // Log first line item structure for debugging
       if (lines.length > 0) {
         console.log("🔍 [EXTENSION] First line item:", lines[0]);
         console.log("🔍 [EXTENSION] First line item keys:", Object.keys(lines[0] || {}));
       }
-      
+
       // Extract unique product IDs from line items
       const productIds = lines
         .map((item, index) => {
           console.log(`🔍 [EXTENSION] Processing line item ${index}:`, item);
-          
+
           // Line items can have product ID in different places
           // Try item.product?.id or item.merchandise?.product?.id
-          const productId = item.product?.id || 
-                          item.merchandise?.product?.id ||
-                          item.variant?.product?.id ||
-                          item.merchandise?.id; // Sometimes variant ID is in merchandise.id
-          
+          const productId = item.product?.id ||
+            item.merchandise?.product?.id ||
+            item.variant?.product?.id ||
+            item.merchandise?.id; // Sometimes variant ID is in merchandise.id
+
           console.log(`🔍 [EXTENSION] Line item ${index} product ID:`, productId);
           return productId;
         })
         .filter((id) => id != null);
-      
+
       console.log("📦 [EXTENSION] Extracted product IDs:", productIds);
       return [...new Set(productIds)]; // Remove duplicates
     } catch (error) {
@@ -123,7 +258,7 @@ function Extension() {
     try {
       const productIds = getProductIds();
       console.log("📦 [EXTENSION] Product IDs extracted:", productIds);
-      
+
       if (productIds.length === 0) {
         console.log("⚠️ [EXTENSION] No products found in checkout lines");
         setError("No products found in your order. Please try again.");
@@ -134,10 +269,10 @@ function Extension() {
       // Call the file-based API route (which will proxy to backend)
       // Flow: Extension → /api/campaigns/offers → Backend
       const apiUrl = `${APP_URL}/api/campaigns/offers`;
-      
+
       // Try to get shop domain
       const shopDomain = getShopDomain();
-      
+
       console.log("📤 [EXTENSION] Calling proxy route:", apiUrl);
       console.log("📦 [EXTENSION] Request data:", {
         surface: "thank-you-page",
@@ -190,6 +325,15 @@ function Extension() {
     }
   }, [offers]);
 
+  // Log selected variants changes for debugging
+  useEffect(() => {
+    console.log("🛒 [EXTENSION] Selected variants changed:", {
+      count: selectedVariantIds.length,
+      ids: selectedVariantIds,
+      checkoutButtonShouldShow: selectedVariantIds.length > 0
+    });
+  }, [selectedVariantIds]);
+
   // Automatically fetch offers when component mounts
   useEffect(() => {
     console.log("🚀 [EXTENSION] Component mounted, auto-fetching offers...");
@@ -200,7 +344,7 @@ function Extension() {
   return (
     <s-banner heading="You might also like">
       <s-stack gap="base">
-        <s-button 
+        <s-button
           onClick={() => {
             console.log("🔄 [EXTENSION] Refresh button clicked");
             fetchOffers();
@@ -212,13 +356,13 @@ function Extension() {
         {loading && (
           <s-text>Loading recommended products...</s-text>
         )}
-        
+
         {error && (
           <s-stack gap="base">
             <s-text tone="critical">
               {error}
             </s-text>
-            <s-button 
+            <s-button
               onClick={() => {
                 console.log("🔘 [EXTENSION] Retry button clicked");
                 fetchOffers();
@@ -234,7 +378,7 @@ function Extension() {
           if (!offers || !offers.offers || !Array.isArray(offers.offers) || offers.offers.length === 0) {
             return null;
           }
-          
+
           // Flatten all offers from all campaigns for simpler rendering
           const allOffers = [];
           offers.offers.forEach((campaign) => {
@@ -246,16 +390,16 @@ function Extension() {
               });
             }
           });
-          
+
           console.log("✅ [EXTENSION] Total products to render:", allOffers.length);
           console.log("✅ [EXTENSION] First product:", allOffers[0]?.product);
-          
+
           if (allOffers.length === 0) {
             return (
               <s-text tone="subdued">No products to display</s-text>
             );
           }
-          
+
           return (
             <s-stack gap="base">
               <s-text size="small" tone="subdued">
@@ -263,10 +407,10 @@ function Extension() {
               </s-text>
               {allOffers.map((offer, index) => {
                 const product = offer.product;
-                
+
                 console.log(`🎯 [EXTENSION] Rendering product ${index}:`, product?.title);
                 console.log(`🎯 [EXTENSION] Product ${index} data:`, product);
-                
+
                 if (!product) {
                   console.warn(`⚠️ [EXTENSION] Offer ${index} has no product`);
                   return null;
@@ -276,17 +420,21 @@ function Extension() {
                 const selectedVariant = product?.variants && product.variants.length > 0
                   ? product.variants[0]
                   : null;
-                
+
+                // Store full variant GID (not numeric ID) for API call
+                const variantGid = selectedVariant?.id || null;
+                const isSelected = variantGid ? selectedVariantIds.includes(variantGid) : false;
+
                 // Use variant price if available, otherwise use product minPrice
                 const price = selectedVariant?.price || product?.minPrice || "0.00";
                 const compareAtPrice = selectedVariant?.compareAtPrice || null;
-                
+
                 console.log(`💰 [EXTENSION] Product ${index}: ${product.title}, Price: $${price}, Compare: $${compareAtPrice || 'N/A'}`);
                 console.log(`✅ [EXTENSION] Rendering product card for: ${product.title}`);
-                
+
                 // Build product URL
-                const productUrl = product.handle 
-                  ? `/products/${product.handle}` 
+                const productUrl = product.handle
+                  ? `/products/${product.handle}`
                   : `#`;
 
                 return (
@@ -296,70 +444,116 @@ function Extension() {
                     padding="base"
                     border="base"
                   >
-                        <s-stack direction="inline" gap="base" alignItems="start">
-                          {/* Product Image */}
-                          {product?.image?.src ? (
-                            <s-box inlineSize="120px" blockSize="120px" borderRadius="base" overflow="hidden">
-                              <s-image
-                                src={product.image.src}
-                                alt={product.image.alt || product.title || "Product"}
-                                aspectRatio="1"
-                                inlineSize="100%"
-                                blockSize="100%"
-                              />
-                            </s-box>
-                          ) : (
-                            <s-box 
-                              inlineSize="120px" 
-                              blockSize="120px" 
-                              borderRadius="base" 
-                              background="subdued"
-                            >
-                              <s-text tone="subdued" size="small">No Image</s-text>
-                            </s-box>
-                          )}
+                    <s-stack direction="inline" gap="base" alignItems="start">
+                      {/* Selection checkbox */}
+                      {variantGid && (
+                        <s-checkbox
+                          checked={isSelected}
+                          onChange={() => toggleVariantSelection(variantGid)}
+                        />
+                      )}
 
-                          {/* Product Details */}
-                          <s-stack direction="block" gap="small" flex="1">
-                            {/* Product Name */}
-                            <s-text size="large" emphasis="strong">
-                              {product?.title || "Product"}
+                      {/* Product Image */}
+                      {product?.image?.src ? (
+                        <s-box inlineSize="120px" blockSize="120px" borderRadius="base" overflow="hidden">
+                          <s-image
+                            src={product.image.src}
+                            alt={product.image.alt || product.title || "Product"}
+                            aspectRatio="1"
+                            inlineSize="100%"
+                            blockSize="100%"
+                          />
+                        </s-box>
+                      ) : (
+                        <s-box
+                          inlineSize="120px"
+                          blockSize="120px"
+                          borderRadius="base"
+                          background="subdued"
+                        >
+                          <s-text tone="subdued" size="small">No Image</s-text>
+                        </s-box>
+                      )}
+
+                      {/* Product Details */}
+                      <s-stack direction="block" gap="small" flex="1">
+                        {/* Product Name */}
+                        <s-text size="large" emphasis="strong">
+                          {product?.title || "Product"}
+                        </s-text>
+
+                        {/* Vendor */}
+                        {product?.vendor && (
+                          <s-text size="small" tone="subdued">
+                            {product.vendor}
+                          </s-text>
+                        )}
+
+                        {/* Price */}
+                        <s-stack direction="inline" gap="small" alignItems="center">
+                          <s-text size="medium" emphasis="strong">
+                            ${parseFloat(price).toFixed(2)}
+                          </s-text>
+                          {compareAtPrice && parseFloat(compareAtPrice) > parseFloat(price) && (
+                            <s-text size="small" tone="subdued">
+                              ${parseFloat(compareAtPrice).toFixed(2)}
                             </s-text>
+                          )}
+                        </s-stack>
 
-                            {/* Vendor */}
-                            {product?.vendor && (
-                              <s-text size="small" tone="subdued">
-                                {product.vendor}
-                              </s-text>
-                            )}
-
-                            {/* Price */}
-                            <s-stack direction="inline" gap="small" alignItems="center">
-                              <s-text size="medium" emphasis="strong">
-                                ${parseFloat(price).toFixed(2)}
-                              </s-text>
-                              {compareAtPrice && parseFloat(compareAtPrice) > parseFloat(price) && (
-                                <s-text size="small" tone="subdued">
-                                  ${parseFloat(compareAtPrice).toFixed(2)}
-                                </s-text>
-                              )}
-                            </s-stack>
-
-                            {/* View Product Link */}
-                            {product.handle && (
+                        {/* View Product Link */}
+                        {/* {product.handle && (
                               <s-button
                                 href={productUrl}
                                 variant="primary"
                                 size="small"
                               >
-                                View Product
+                                Buy Now
                               </s-button>
-                            )}
-                          </s-stack>
-                        </s-stack>
-                      </s-box>
-                  );
-                })}
+                            )} */}
+                      </s-stack>
+                    </s-stack>
+                  </s-box>
+                );
+              })}
+
+              {/* Checkout footer - visible only when at least one variant is selected */}
+              {selectedVariantIds.length > 0 && (
+                <s-box padding="base" border="base" borderRadius="base">
+                  <s-stack gap="base">
+                    <s-stack direction="inline" alignItems="center" justifyContent="space-between">
+                      <s-text size="medium" emphasis="strong">
+                        Total selected
+                      </s-text>
+                      <s-text size="medium">
+                        {selectedVariantIds.length} item(s)
+                      </s-text>
+                    </s-stack>
+
+                    {/* Checkout button - redirects directly to cart */}
+                    {(() => {
+                      const cartUrl = getCartUrl();
+                      return cartUrl ? (
+                        <s-button
+                          variant="primary"
+                          size="large"
+                          href={cartUrl}
+                        >
+                          Buy Now
+                        </s-button>
+                      ) : (
+                        <s-button
+                          variant="primary"
+                          size="large"
+                          disabled
+                        >
+                          Buy Now
+                        </s-button>
+                      );
+                    })()}
+                  </s-stack>
+                </s-box>
+              )}
             </s-stack>
           );
         })()}
@@ -369,7 +563,7 @@ function Extension() {
             <s-text>
               No recommended products available at this time.
             </s-text>
-            <s-button 
+            <s-button
               onClick={() => {
                 console.log("🔘 [EXTENSION] Retry button clicked");
                 fetchOffers();

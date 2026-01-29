@@ -87,6 +87,7 @@ export default function Index() {
   const [selectedCampaignType, setSelectedCampaignType] = useState<CampaignType>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isEnabling, setIsEnabling] = useState(false);
+  const [isAppEmbedEnabled, setIsAppEmbedEnabled] = useState(false);
   const [selectionMethod, setSelectionMethod] = useState<string>("manual");
   const [setEndDate, setSetEndDate] = useState<boolean>(false);
   const [isValidating, setIsValidating] = useState<boolean>(false);
@@ -365,6 +366,7 @@ export default function Index() {
       offerSelection: { type: string; items: string[] };
       startsAt: string;
       endsAt?: string;
+      status: string;
     } = {
       name: campaignName.trim(),
       description: formData?.get("campaignSubtitle")?.toString() || "",
@@ -380,6 +382,7 @@ export default function Index() {
         items: extractGIDs(selectedOfferItems),
       },
       startsAt,
+      status: "active",
     };
 
     // Only include endsAt if it's set and valid
@@ -495,11 +498,12 @@ export default function Index() {
 
   // Handle enable web pixel action
   const handleEnable = async () => {
-    if (isEnabling) return; // Prevent multiple clicks
+    if (isEnabling || isAppEmbedEnabled) return; // Prevent multiple clicks or if already enabled
 
     setIsEnabling(true);
 
     try {
+      // Enable the app embed
       const response = await fetch("/api/webpixel-create", {
         method: "POST",
         headers: {
@@ -522,12 +526,8 @@ export default function Index() {
         throw new Error(data.message || "Failed to enable web pixel");
       }
 
-      // Show success toast
-      shopify.toast?.show?.("Web pixel enabled successfully");
-      
-      // Optionally update UI state or refresh data
-      // You might want to update the badge from "Disabled" to "Enabled"
-      
+      setIsAppEmbedEnabled(true);
+      shopify.toast?.show?.("App embed enabled successfully");
     } catch (error) {
       console.error("Enable error:", error);
       shopify.toast?.show?.(
@@ -1681,145 +1681,6 @@ export default function Index() {
 
       )}
 
-      {/* Offers Display Section - Show offers response */}
-      {(() => {
-        console.log("🔍 [OFFERS] Render check:", {
-          hasOffersResponse: !!offersResponse,
-          offersResponse: offersResponse,
-          hasOffers: !!offersResponse?.offers,
-          offersLength: offersResponse?.offers?.length
-        });
-        return offersResponse && offersResponse.offers && Array.isArray(offersResponse.offers) && offersResponse.offers.length > 0;
-      })() && (
-        <s-section>
-          <s-stack direction="block" gap="base">
-            <s-heading>You might also like these</s-heading>
-            console.log("📦 [OFFERS] Offers response:", offersResponse);
-            
-            <s-stack direction="block" gap="base">
-              {offersResponse.offers.map((campaign: any) => {
-                if (!campaign.offers || campaign.offers.length === 0) return null;
-                
-                return (
-                  <s-stack key={campaign.campaignId} direction="block" gap="small">
-                    {campaign.offers.map((offer: any) => {
-                      const product = offer.product;
-                      const selectedVariant = product?.variants?.find(
-                        (v: any) => v.id === offer.selectedVariantId
-                      ) || product?.variants?.[0];
-                      const offerKey = `${offer.id}-${offer.selectedVariantId || ''}`;
-                      const isSelected = selectedOffers[offerKey] || false;
-
-                      return (
-                        <s-box
-                          key={offerKey}
-                          borderRadius="base"
-                          padding="base"
-                        >
-                          <s-stack direction="inline" gap="base" alignItems="start">
-                            {/* Checkbox */}
-                            <s-stack direction="block" alignItems="start" paddingBlockStart="small">
-                              <s-checkbox
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  const checked = Boolean(e.currentTarget.checked);
-                                  setSelectedOffers(prev => {
-                                    const next = { ...prev };
-                                    next[offerKey] = checked;
-                                    return next;
-                                  });
-                                }}
-                                label=""
-                              />
-                            </s-stack>
-
-                            {/* Product Image */}
-                            {product?.image?.src && (
-                              <s-box inlineSize="100px" blockSize="100px" borderRadius="base">
-                                <s-image
-                                  src={product.image.src}
-                                  alt={product.image.alt || product.title || "Product"}
-                                  aspectRatio="1"
-                                  inlineSize="auto"
-                                />
-                              </s-box>
-                            )}
-
-                            {/* Product Details */}
-                            <s-stack direction="block" gap="small">
-                              {/* Product Title */}
-                              <s-text>
-                                {product?.title || "Product"}
-                              </s-text>
-
-                              {/* Variant Info */}
-                              {selectedVariant && offer.type === "specific_variants" && (
-                                <s-text>
-                                  <span style={{ color: "var(--p-color-text-subdued)" }}>
-                                    {selectedVariant.title}
-                                  </span>
-                                </s-text>
-                              )}
-
-                              {/* Price */}
-                              {selectedVariant?.price && (
-                                <s-text>
-                                  ${parseFloat(selectedVariant.price).toFixed(2)}
-                                  {selectedVariant?.compareAtPrice && (
-                                    <span style={{
-                                      marginLeft: "var(--p-space-200)",
-                                      textDecoration: "line-through",
-                                      color: "var(--p-color-text-subdued)"
-                                    }}>
-                                      ${parseFloat(selectedVariant.compareAtPrice).toFixed(2)}
-                                    </span>
-                                  )}
-                                </s-text>
-                              )}
-                            </s-stack>
-                          </s-stack>
-                        </s-box>
-                      );
-                    })}
-                  </s-stack>
-                );
-              })}
-            </s-stack>
-
-            {/* Select Items Button */}
-            <s-stack direction="inline" justifyContent="end" paddingBlockStart="base">
-              <s-button
-                variant="primary"
-                onClick={() => {
-                  const selectedOfferKeys = Object.keys(selectedOffers).filter(key => selectedOffers[key]);
-                  if (selectedOfferKeys.length > 0) {
-                    shopify.toast?.show?.(`${selectedOfferKeys.length} item(s) selected`);
-                    // You can add additional logic here to handle selected items
-                  } else {
-                    shopify.toast?.show?.("Please select at least one item", { isError: true });
-                  }
-                }}
-              >
-                Select items
-              </s-button>
-            </s-stack>
-          </s-stack>
-        </s-section>
-      )}
-
-      {/* Debug: Show offersResponse state */}
-      {offersResponse && (
-        <s-section>
-          <s-stack direction="block" gap="small">
-            <s-heading>Debug: Offers Response</s-heading>
-            <s-text>
-              <pre style={{ fontSize: "12px", overflow: "auto" }}>
-                {JSON.stringify(offersResponse, null, 2)}
-              </pre>
-            </s-text>
-          </s-stack>
-        </s-section>
-      )}
 
       {/* Dashboard Content - Only show when on dashboard step */}
       {currentStep === "dashboard" && (
@@ -1827,32 +1688,36 @@ export default function Index() {
           <s-stack direction="inline" justifyContent="space-between" alignItems="center">
             <s-stack direction="inline" columnGap="base" alignItems="center">
               <s-heading>SmartSell app embed is</s-heading>
-              <s-badge tone="caution">Disabled</s-badge>
+              <s-badge tone={isAppEmbedEnabled ? "success" : "caution"}>
+                {isAppEmbedEnabled ? "Enabled" : "Disabled"}
+              </s-badge>
             </s-stack>
 
             <s-stack direction="inline" columnGap="base">
-              <s-button
-                variant="tertiary"
-                onClick={handleRefresh}
-                loading={isRefreshing}
-                disabled={isRefreshing}
-              >
-                {!isRefreshing && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--p-space-100)" }}>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "inline-block", verticalAlign: "middle" }}>
-                      <path d="M13.5 8C13.5 11.0376 11.0376 13.5 8 13.5M2.5 8C2.5 4.96243 4.96243 2.5 8 2.5M8 2.5L6 4.5M8 2.5L10 4.5M8 13.5L6 11.5M8 13.5L10 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Refresh
-                  </span>
-                )}
-              </s-button>
+              {isAppEmbedEnabled && (
+                <s-button
+                  variant="tertiary"
+                  onClick={handleRefresh}
+                  loading={isRefreshing}
+                  disabled={isRefreshing}
+                >
+                  {!isRefreshing && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--p-space-100)" }}>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "inline-block", verticalAlign: "middle" }}>
+                        <path d="M13.5 8C13.5 11.0376 11.0376 13.5 8 13.5M2.5 8C2.5 4.96243 4.96243 2.5 8 2.5M8 2.5L6 4.5M8 2.5L10 4.5M8 13.5L6 11.5M8 13.5L10 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Refresh
+                    </span>
+                  )}
+                </s-button>
+              )}
               <s-button 
                 variant="primary" 
                 onClick={handleEnable}
                 loading={isEnabling}
-                disabled={isEnabling}
+                disabled={isEnabling || isAppEmbedEnabled}
               >
-                Enable
+                {isAppEmbedEnabled ? "Disable" : "Enable"}
               </s-button>
             </s-stack>
           </s-stack>
